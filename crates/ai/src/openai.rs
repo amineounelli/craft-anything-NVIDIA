@@ -31,6 +31,20 @@ pub const OPENCODE_GO_BASE: &str = "https://opencode.ai/inference/go/openai/v1";
 pub const OPENCODE_GO_SESSION_HEADER: &str = "x-opencode-session";
 /// The model a new OpenCode Go backend starts on, before its own list is fetched.
 pub const OPENCODE_GO_DEFAULT_MODEL: &str = "kimi-k3.1-pro";
+/// NVIDIA NIM API: OpenAI-compatible, keyed with NVIDIA_API_KEY.
+pub const NVIDIA_BASE: &str = "https://integrate.api.nvidia.com/v1";
+/// The model a new NVIDIA backend starts on, before NIM's own list is fetched.
+pub const NVIDIA_DEFAULT_MODEL: &str = "nvidia/nemotron-4-340b-instruct";
+/// NVIDIA NIM models offered when adding a key. Selected for reverse engineering,
+/// code analysis, and heavy web/app decomposition work.
+pub const NVIDIA_MODELS: &[&str] = &[
+    NVIDIA_DEFAULT_MODEL,
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "nvidia/nemotron-3.5-super-vl-120b-a12b",
+];
 
 /// Whether this base URL is OpenCode Go's: https, host opencode.ai, path under /inference/go/.
 /// A substring test would also match a look-alike host or a proxy path.
@@ -84,6 +98,11 @@ impl OpenAi {
     /// A Google AI Studio (Gemini API) key, through Gemini's OpenAI-compatible endpoint.
     pub fn gemini(base: Option<&str>, key: String, model: &str) -> Self {
         Self::compatible("Gemini", base.unwrap_or(GEMINI_BASE), Some(key), if model.is_empty() { GEMINI_DEFAULT_MODEL } else { model })
+    }
+
+    /// An NVIDIA NIM API key, through NVIDIA's OpenAI-compatible endpoint at integrate.api.nvidia.com.
+    pub fn nvidia(base: Option<&str>, key: String, model: &str) -> Self {
+        Self::compatible("NVIDIA", base.unwrap_or(NVIDIA_BASE), Some(key), if model.is_empty() { NVIDIA_DEFAULT_MODEL } else { model })
     }
 
     pub fn compatible(label: &str, base: &str, key: Option<String>, model: &str) -> Self {

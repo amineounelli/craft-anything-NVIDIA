@@ -97,6 +97,15 @@ pub const PROVIDERS: &[Provider] = &[
         default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
         catalog_id: "deepinfra",
     },
+    Provider {
+        name: "NVIDIA (NIM API)",
+        kind: BackendKind::Nvidia,
+        base_url: "https://integrate.api.nvidia.com/v1",
+        key_env: "NVIDIA_API_KEY",
+        alt_key_env: None,
+        default_model: "nvidia/nemotron-4-340b-instruct",
+        catalog_id: "nvidia",
+    },
 ];
 
 impl Provider {
@@ -208,5 +217,17 @@ mod tests {
         assert_eq!(of_base("https://api.deepseek.com/v1/"), Some(&PROVIDERS[1]));
         assert_eq!(of_base("http://127.0.0.1:11434/v1"), None);
         assert_eq!(of_base("https://api.example.test/v1"), None);
+    }
+
+    /// The NVIDIA NIM row is recognised by its base URL and key variable.
+    #[test]
+    fn nvidia_provider_is_recognised() {
+        let nvidia = PROVIDERS.iter().find(|p| p.kind == BackendKind::Nvidia).unwrap();
+        assert_eq!(nvidia.name, "NVIDIA (NIM API)");
+        assert_eq!(nvidia.base_url, "https://integrate.api.nvidia.com/v1");
+        assert_eq!(nvidia.key_env, "NVIDIA_API_KEY");
+        assert_eq!(nvidia.default_model, "nvidia/nemotron-4-340b-instruct");
+        assert_eq!(of_base("https://integrate.api.nvidia.com/v1"), Some(nvidia));
+        assert_eq!(of_base("https://integrate.api.nvidia.com/v1/"), Some(nvidia));
     }
 }

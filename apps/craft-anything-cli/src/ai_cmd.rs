@@ -34,7 +34,7 @@ pub enum AiCommand {
     /// Add a backend.
     Add {
         name: String,
-        /// anthropic, openai, openrouter, openai_compatible, agent_cli
+        /// anthropic, openai, openrouter, nvidia, openai_compatible, agent_cli
         #[arg(long)]
         kind: String,
         #[arg(long)]
@@ -234,7 +234,7 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
         AiCommand::Add { name, kind, model, base_url, ssh_host, key_env, key_stdin } => {
             let kind: BackendKind = match serde_json::from_value(json!(kind)) {
                 Ok(k) => k,
-                Err(_) => return crate::usage_error("--kind must be one of anthropic, openai, openrouter, openai_compatible, agent_cli"),
+                Err(_) => return crate::usage_error("--kind must be one of anthropic, openai, openrouter, nvidia, openai_compatible, agent_cli"),
             };
             let key = match read_key(key_env, *key_stdin) {
                 Ok(k) => k,

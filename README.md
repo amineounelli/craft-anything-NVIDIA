@@ -154,6 +154,13 @@ Switch in the title bar or Settings, with `settings_set deep_mode true`, or for 
 
 ## AI
 
+> [!NOTE]
+> **Forked for NVIDIA NIM:** This fork replaces Anthropic, OpenAI and OpenRouter backends with the
+> NVIDIA NIM API. Kept models: `nvidia/nemotron-4-340b-instruct`, `nvidia/llama-3.1-nemotron-70b-instruct`,
+> `nvidia/llama-3.1-nemotron-ultra-253b-v1`, `nvidia/nemotron-3-super-120b-a12b`,
+> `deepseek-ai/deepseek-coder-6.7b-instruct`, `nvidia/nemotron-3.5-super-vl-120b-a12b` — selected
+> for reverse engineering, code analysis and app/web decomposition.
+
 Building needs a coding agent on your computer. **Claude Code** is supported first: Craft
 Anything runs your own, unmodified `claude` program, which uses your own sign-in; Craft Anything
 never sees or handles your account. Your use of it falls under your own agreement with
@@ -161,8 +168,7 @@ Anthropic. See [docs/claude-code.md](docs/claude-code.md) for how and why. A Cod
 exists but hasn't been verified on a real install yet. **GitHub Copilot** can use your installed
 Copilot CLI through ACP: sign in separately with `copilot login`. Other agents that speak ACP (Gemini CLI,
 Qwen Code, opencode, goose, Hermes, Maki) can be switched to it per backend; of those, only Maki has
-been run live. Anthropic, OpenAI, OpenRouter and local
-OpenAI-compatible servers are available for questions and analysis (Settings → AI).
+been run live. NVIDIA NIM API is available for questions and analysis (Settings → AI).
 
 ## Built for agents
 

@@ -55,6 +55,8 @@ pub enum BackendKind {
     OpenaiCompatible,
     /// Claude Code, Codex, Gemini CLI, Hermes Agent, OpenCode… run as a subprocess with our MCP server.
     AgentCli,
+    /// NVIDIA NIM API (OpenAI-compatible): Nemotron Super and other NVIDIA models.
+    Nvidia,
 }
 
 impl BackendKind {
@@ -66,18 +68,20 @@ impl BackendKind {
             BackendKind::Gemini => "Gemini (Google AI Studio)",
             BackendKind::OpenaiCompatible => "Local / OpenAI-compatible server",
             BackendKind::AgentCli => "Agent app (command line)",
+            BackendKind::Nvidia => "NVIDIA (NIM API)",
         }
     }
 
     /// Models offered in a dropdown before a live list is fetched.
     pub fn suggested_models(self) -> &'static [&'static str] {
         match self {
-            BackendKind::Anthropic => anthropic::MODELS,
+            BackendKind::Anthropic => &[],
             BackendKind::Openai => &[openai::OPENAI_DEFAULT_MODEL],
-            BackendKind::Openrouter => openai::OPENROUTER_MODELS,
+            BackendKind::Openrouter => &[],
             BackendKind::Gemini => openai::GEMINI_MODELS,
             BackendKind::OpenaiCompatible => &[],
-            BackendKind::AgentCli => &["claude-code", "codex", "copilot", "gemini-cli", "opencode", "antigravity", "hermes", "maki"],
+            BackendKind::AgentCli => &["copilot", "gemini-cli", "opencode", "antigravity", "hermes", "maki"],
+            BackendKind::Nvidia => openai::NVIDIA_MODELS,
         }
     }
 
@@ -85,12 +89,17 @@ impl BackendKind {
     pub fn is_harness(self) -> bool {
         match self {
             BackendKind::AgentCli => true,
-            BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter | BackendKind::Gemini | BackendKind::OpenaiCompatible => false,
+            BackendKind::Anthropic
+            | BackendKind::Openai
+            | BackendKind::Openrouter
+            | BackendKind::Gemini
+            | BackendKind::OpenaiCompatible
+            | BackendKind::Nvidia => false,
         }
     }
 
     pub fn needs_key(self) -> bool {
-        matches!(self, BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter | BackendKind::Gemini)
+        matches!(self, BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter | BackendKind::Gemini | BackendKind::Nvidia)
     }
 }
 
@@ -805,6 +814,7 @@ impl AiHub {
             BackendKind::Openai => Box::new(openai::OpenAi::official(base, self.key_for(e)?, &c.model)),
             BackendKind::Openrouter => Box::new(openai::OpenAi::openrouter(base, self.key_for(e)?, &c.model)),
             BackendKind::Gemini => Box::new(openai::OpenAi::gemini(base, self.key_for(e)?, &c.model)),
+            BackendKind::Nvidia => Box::new(openai::OpenAi::nvidia(base, self.key_for(e)?, &c.model)),
             BackendKind::OpenaiCompatible => {
                 let base = base.unwrap_or("http://127.0.0.1:11434/v1");
                 let key = self.keys.get(&c.name).or_else(|| go_env_key(base).or_else(|| providers::env_key(base)));
@@ -920,6 +930,7 @@ impl AiHub {
             BackendKind::Openai => openai::OpenAi::official(base, self.key_for(&e)?, &e.config.model).list_models(t),
             BackendKind::Openrouter => openai::OpenAi::openrouter(base, self.key_for(&e)?, &e.config.model).list_models(t),
             BackendKind::Gemini => openai::OpenAi::gemini(base, self.key_for(&e)?, &e.config.model).list_models(t),
+            BackendKind::Nvidia => openai::OpenAi::nvidia(base, self.key_for(&e)?, &e.config.model).list_models(t),
             BackendKind::OpenaiCompatible => {
                 if e.config.ssh_host.as_deref().is_some_and(|h| !h.trim().is_empty()) {
                     return Err(ToolError::unavailable("Listing models on a remote server isn't supported yet.").with_remediation("Type the model name."));
@@ -1032,6 +1043,7 @@ fn reach(e: &BackendEntry, key: Option<String>) -> Result<u64, String> {
         BackendKind::Openai => openai::OpenAi::official(base, need(key)?, &e.config.model).list_models(t).map(|_| ()).map_err(|x| x.message),
         BackendKind::Openrouter => openai::OpenAi::openrouter(base, need(key)?, &e.config.model).list_models(t).map(|_| ()).map_err(|x| x.message),
         BackendKind::Gemini => openai::OpenAi::gemini(base, need(key)?, &e.config.model).list_models(t).map(|_| ()).map_err(|x| x.message),
+        BackendKind::Nvidia => openai::OpenAi::nvidia(base, need(key)?, &e.config.model).list_models(t).map(|_| ()).map_err(|x| x.message),
         BackendKind::OpenaiCompatible | BackendKind::AgentCli if e.config.ssh_host.as_deref().is_some_and(|h| !h.trim().is_empty()) => {
             let host = e.config.ssh_host.clone().unwrap_or_default();
             craft_anything_platform::Process::new("ssh")
