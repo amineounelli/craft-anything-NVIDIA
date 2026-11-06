@@ -249,6 +249,9 @@ pub struct Price {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiConfig {
+    /// Backends saved by another build (anthropic, OpenRouter, agent CLI…) can't run here. Unknown
+    /// kinds are skipped with a warning instead of refusing to read the whole [ai] section.
+    #[serde(deserialize_with = "tolerant_backends")]
     pub backends: Vec<BackendEntry>,
     /// Role (`lead`, `worker`, `reviewer`, `builder`) → backend name.
     pub roles: BTreeMap<String, String>,
@@ -270,6 +273,35 @@ pub fn role_key(r: Role) -> &'static str {
         Role::Builder => "builder",
         Role::Extractor => "extractor",
     }
+}
+
+/// Read the saved backends, keeping only the ones this build understands.
+/// Legacy backends (anthropic, OpenRouter, agent CLI…) from another build are skipped with a
+/// warning instead of bricking the whole [ai] section.
+fn tolerant_backends<'de, D>(deserializer: D) -> Result<Vec<BackendEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values: Vec<toml::Value> = Deserialize::deserialize(deserializer)?;
+    let mut out = Vec::new();
+    for value in values {
+        let kind = value
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("");
+        if kind != "nvidia" {
+            log::warn!(
+                "skipping saved AI backend with unsupported kind {kind:?}; only NVIDIA backends exist in this build"
+            );
+            continue;
+        }
+        let text = toml::to_string(&value).map_err(|e| serde::de::Error::custom(e.to_string()))?;
+        match toml::from_str::<BackendEntry>(&text) {
+            Ok(entry) => out.push(entry),
+            Err(e) => return Err(serde::de::Error::custom(format!("invalid NVIDIA backend: {e}"))),
+        }
+    }
+    Ok(out)
 }
 
 impl AiConfig {
@@ -451,6 +483,23 @@ mod tests {
         assert!(c.remove("Local"));
         assert!(c.roles.is_empty());
         assert!(!c.remove("Local"));
+    }
+
+    #[test]
+    fn unknown_backend_kind_is_skipped_instead_of_rejected() {
+        let t: toml::Table = toml::from_str(
+            r#"
+backends = [
+  { name = "Old", kind = "agent_cli", model = "opencode" },
+  { name = "NIM", kind = "nvidia", model = "nvidia/nemotron-4-340b-instruct", base_url = "https://integrate.api.nvidia.com/v1" },
+]
+"#,
+        )
+        .unwrap();
+        let config = AiConfig::from_table(&t).unwrap();
+        assert_eq!(config.backends.len(), 1);
+        assert_eq!(config.backends[0].config.name, "NIM");
+        assert_eq!(config.backends[0].config.kind, BackendKind::Nvidia);
     }
 
     #[test]

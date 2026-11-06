@@ -111,9 +111,13 @@ pub fn effort_in_use(_config: &BackendConfig, _options: Option<&BackendOptions>)
     None
 }
 
-/// The model an AI uses, when it can be chosen (Settings → AI, #123): the API's own model.
+/// The model an AI uses, when it can be chosen (Settings → AI, #123): the API's own model, or the
+/// first model this backend kind suggests when none has been chosen yet.
 pub fn model_in_use(config: &BackendConfig, _options: Option<&BackendOptions>) -> Option<String> {
-    Some(config.model.clone())
+    if !config.model.is_empty() {
+        return Some(config.model.clone());
+    }
+    config.kind.suggested_models().first().map(|m| m.to_string())
 }
 
 /// The variable that moves an agent app's own folder (its sign-in, settings and sessions), when
@@ -467,10 +471,15 @@ impl AiHub {
         Err(ToolError::invalid("This backend doesn't take an effort level."))
     }
 
-    /// The models a backend can be set to: the API's list. Blocking (bounded); run it off the UI thread.
+    /// The models a backend can be set to: the API's list, falling back to the models this backend
+    /// kind suggests when the live list can't be fetched (no key, no network, or an empty answer).
+    /// Blocking (bounded); run it off the UI thread.
     pub fn model_choices(&self, name: &str) -> Result<Vec<String>, ToolError> {
-        let _e = self.entry(name)?;
-        self.list_models(name)
+        let e = self.entry(name)?;
+        match self.list_models(name) {
+            Ok(models) if !models.is_empty() => Ok(models),
+            _ => Ok(e.config.kind.suggested_models().iter().map(|m| m.to_string()).collect()),
+        }
     }
 
     /// Capture the exact settings and working directory that model discovery will use.
