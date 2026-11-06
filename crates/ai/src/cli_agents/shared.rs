@@ -6,6 +6,7 @@ use crate::BackendEntry;
 use craft_anything_engine::Engine;
 use std::sync::mpsc::RecvTimeoutError;
 
+#[allow(dead_code)]
 enum Command {
     Send(String),
     Answer(String, bool),
@@ -13,6 +14,7 @@ enum Command {
     Quit,
 }
 
+#[allow(dead_code)]
 pub(crate) struct SharedConversation {
     commands: Sender<Command>,
     events: Receiver<AgentEvent>,
@@ -22,6 +24,7 @@ pub(crate) struct SharedConversation {
 }
 
 impl SharedConversation {
+    #[allow(dead_code)]
     pub(crate) fn new(engine: Arc<Engine>, entry: BackendEntry, beginner: bool) -> Result<Self, ToolError> {
         let (commands, requests) = std::sync::mpsc::channel();
         let (output, events) = std::sync::mpsc::channel();
@@ -124,6 +127,7 @@ impl SharedConversation {
     }
 }
 
+#[allow(dead_code)]
 fn prepare(engine: &Engine, entry: &BackendEntry, beginner: bool) -> Result<CliSpec, ToolError> {
     let mut session = engine.session();
     let config = crate::AiConfig::from_settings(&session.settings);
@@ -199,7 +203,7 @@ mod tests {
         engine.session().add_target(Target::load(&second).unwrap());
         engine.session().set_active(&active).unwrap();
         let entry = BackendEntry {
-            config: BackendConfig { name: "Agent".into(), kind: BackendKind::AgentCli, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true },
+            config: BackendConfig { name: "Agent".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true },
             options: BackendOptions::default(),
         };
         let spec = prepare(&engine, &entry, false).unwrap();

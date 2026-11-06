@@ -177,7 +177,7 @@ pub fn select(context: &ModelContext, model: Option<&str>, thinking: Option<Effo
 pub fn select_with_stop(context: &ModelContext, model: Option<&str>, thinking: Option<Effort>, stop: &Stop) -> Result<BackendOptions, ToolError> {
     stop.check()?;
     let adapter = super::adapter_for(&context.backend.config.model);
-    if context.backend.config.kind != crate::BackendKind::AgentCli || !adapter.has_model_catalog() {
+    if context.backend.config.kind != crate::BackendKind::Nvidia || !adapter.has_model_catalog() {
         return Err(ToolError::invalid("This agent does not offer a live model and thinking catalogue."));
     }
     let mut options = context.backend.options.clone();
@@ -256,7 +256,7 @@ mod tests {
 
     /// An isolated local backend for catalogue fixtures.
     fn config() -> BackendConfig {
-        BackendConfig { name: "OpenCode".into(), kind: crate::BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true }
+        BackendConfig { name: "OpenCode".into(), kind: crate::BackendKind::Nvidia, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true }
     }
 
     /// Discovery preserves the chosen executable and server, omitting run-only flags and local paths over SSH.

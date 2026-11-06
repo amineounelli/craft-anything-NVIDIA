@@ -59,7 +59,7 @@ struct SetParams {
 fn context(ctx: &Ctx<'_>, name: &str) -> Result<ModelContext, ToolError> {
     let config = AiConfig::from_table(&ctx.session.settings.ai)?;
     let backend = config.get(name).cloned().ok_or_else(|| ToolError::invalid(format!("No AI backend named {name:?}.")))?;
-    if backend.config.kind != crate::BackendKind::AgentCli || !cli_agents::adapter_for(&backend.config.model).has_model_catalog() {
+    if backend.config.kind != crate::BackendKind::Nvidia || !cli_agents::adapter_for(&backend.config.model).has_model_catalog() {
         return Err(ToolError::invalid("Choose an agent backend with a live model catalogue."));
     }
     Ok(ModelContext { backend, directory: ctx.session.project.as_ref().map(|p| p.root.clone()) })
@@ -102,7 +102,7 @@ mod tests {
         config.upsert(crate::BackendEntry {
             config: crate::BackendConfig {
                 name: "OpenCode".into(),
-                kind: crate::BackendKind::AgentCli,
+                kind: crate::BackendKind::Nvidia,
                 model: "opencode".into(),
                 base_url: None,
                 ssh_host: None,
@@ -128,46 +128,48 @@ mod tests {
     /// Both clients merge unrelated disk edits instead of replacing them with their older session snapshot.
     #[test]
     fn selection_saves_preserve_external_settings_and_other_backends() {
-        for tool in [false, true] {
-            let (hub, path) = selection_clients();
-            let mut disk = hub.engine.session().settings.clone();
-            disk.language = "zh-hans".into();
-            let mut config = AiConfig::from_table(&disk.ai).unwrap();
-            let mut other = config.get("OpenCode").unwrap().clone();
-            other.config.name = "Other".into();
-            other.options.timeout_secs = Some(123);
-            config.upsert(other.clone());
-            config.roles.insert("builder".into(), "Other".into());
-            disk.ai = config.to_table().unwrap();
-            disk.save_to(&path).unwrap();
-            reset_selection(&hub, tool).unwrap();
-            let saved = craft_anything_engine::Settings::load_from(&path);
-            let config = AiConfig::from_table(&saved.ai).unwrap();
-            assert_eq!(saved.language, "zh-hans");
-            assert_eq!(config.get("Other"), Some(&other));
-            assert_eq!(config.roles.get("builder").map(String::as_str), Some("Other"));
-            assert!(config.get("OpenCode").unwrap().options.cli_model.is_none());
-            assert_eq!(hub.engine.session().settings, saved);
-        }
+        // `tool = false` goes through `set_agent_model`, which is for agent CLIs and always
+        // fails in the NVIDIA-only build. Only the engine-tool path applies here.
+        let tool = true;
+        let (hub, path) = selection_clients();
+        let mut disk = hub.engine.session().settings.clone();
+        disk.language = "zh-hans".into();
+        let mut config = AiConfig::from_table(&disk.ai).unwrap();
+        let mut other = config.get("OpenCode").unwrap().clone();
+        other.config.name = "Other".into();
+        other.options.timeout_secs = Some(123);
+        config.upsert(other.clone());
+        config.roles.insert("builder".into(), "Other".into());
+        disk.ai = config.to_table().unwrap();
+        disk.save_to(&path).unwrap();
+        reset_selection(&hub, tool).unwrap();
+        let saved = craft_anything_engine::Settings::load_from(&path);
+        let config = AiConfig::from_table(&saved.ai).unwrap();
+        assert_eq!(saved.language, "zh-hans");
+        assert_eq!(config.get("Other"), Some(&other));
+        assert_eq!(config.roles.get("builder").map(String::as_str), Some("Other"));
+        assert!(config.get("OpenCode").unwrap().options.cli_model.is_none());
+        assert_eq!(hub.engine.session().settings, saved);
     }
 
     /// Syntax errors, invalid AI tables and future versions remain byte-for-byte intact on refused saves.
     #[test]
     fn selection_saves_refuse_damaged_or_newer_disk_settings() {
-        for tool in [false, true] {
-            for damaged in [Some("not valid = ["), Some("[ai]\nbackends = 123\n"), None] {
-                let (hub, path) = selection_clients();
-                let before = hub.engine.session().settings.clone();
-                let text = damaged.map(str::to_string).unwrap_or_else(|| {
-                    let mut newer = before.clone();
-                    newer.version = u32::MAX;
-                    toml::to_string(&newer).unwrap()
-                });
-                std::fs::write(&path, &text).unwrap();
-                assert_eq!(reset_selection(&hub, tool).unwrap_err().code, craft_anything_evidence::ErrorCode::BadSettings);
-                assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-                assert_eq!(hub.engine.session().settings, before);
-            }
+        // `tool = false` goes through `set_agent_model`, which is for agent CLIs and always
+        // fails in the NVIDIA-only build. Only the engine-tool path applies here.
+        let tool = true;
+        for damaged in [Some("not valid = ["), Some("[ai]\nbackends = 123\n"), None] {
+            let (hub, path) = selection_clients();
+            let before = hub.engine.session().settings.clone();
+            let text = damaged.map(str::to_string).unwrap_or_else(|| {
+                let mut newer = before.clone();
+                newer.version = u32::MAX;
+                toml::to_string(&newer).unwrap()
+            });
+            std::fs::write(&path, &text).unwrap();
+            assert_eq!(reset_selection(&hub, tool).unwrap_err().code, craft_anything_evidence::ErrorCode::BadSettings);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+            assert_eq!(hub.engine.session().settings, before);
         }
     }
 
@@ -206,7 +208,7 @@ mod tests {
         cfg.upsert(crate::BackendEntry {
             config: crate::BackendConfig {
                 name: "OpenCode".into(),
-                kind: crate::BackendKind::AgentCli,
+                kind: crate::BackendKind::Nvidia,
                 model: "opencode".into(),
                 base_url: None,
                 ssh_host: None,

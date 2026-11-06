@@ -17,8 +17,7 @@
 //! Modules: `kinds` (what is made: [`TargetKind`]s and [`Check`]s), `study`, `brief` (the builder's prompts), `check`,
 //! `locate` (what to study in a local target) and `output` (what a build produced).
 
-use crate::cli_agents::{Builder, CliSpec};
-use crate::{AgentEvent, AiHub, BackendKind, Conversation, Role};
+use crate::{AgentEvent, AiHub, Conversation, Role};
 use craft_anything_engine::inbox::{Answer, Inbox, InboxDir, Request};
 use craft_anything_engine::project::{Project, Purpose};
 use craft_anything_engine::workspace::progress::{AppFingerprintCache, BuildProgress};
@@ -141,8 +140,6 @@ pub struct RunOptions {
     pub beginner: bool,
     /// The kinds of thing this run can make (website, app, game, and any a fork registers).
     pub kinds: KindRegistry,
-    /// How each coding agent is driven (Claude Code, Codex, Gemini CLI, and any a fork registers).
-    pub adapters: crate::cli_agents::AgentAdapters,
     /// Told after each event (the app repaints).
     pub wake: Wake,
 }
@@ -159,7 +156,6 @@ impl Default for RunOptions {
             good_enough: 90.0,
             beginner: true,
             kinds: KindRegistry::built_in(),
-            adapters: Default::default(),
             wake: Wake::default(),
         }
     }
@@ -201,20 +197,19 @@ impl RebuildRun {
         let entry = builder_backend(&cfg, opts.backend.as_deref().or_else(|| project_builder(&cfg, &ws)))?;
         // An API backend builds with our own agent loop and the Build tools; its conversation is
         // kept in the project and continued by follow-ups (a fresh build starts a new one).
-        let api = match entry.config.kind {
-            BackendKind::AgentCli => None,
-            _ => {
-                if opts.message.is_none() || !ws.capture_dir().exists() {
-                    let _ = std::fs::remove_file(ws.transcript_path());
-                }
-                Some(hub.start_builder(&entry, opts.beginner, Some(ws.transcript_path()))?)
+        // Only NVIDIA (an OpenAI-compatible API backend) exists now, so every backend builds
+        // through our own agent loop and the Build tools.
+        let api = {
+            if opts.message.is_none() || !ws.capture_dir().exists() {
+                let _ = std::fs::remove_file(ws.transcript_path());
             }
+            Some(hub.start_builder(&entry, opts.beginner, Some(ws.transcript_path()))?)
         };
         // A chosen extractor (an API backend, e.g. Kimi K3) takes a game's files out after a fresh
         // study; the run only uses it in Deep mode on a game (see Worker::extract).
         let fresh = opts.message.is_none() || !ws.capture_dir().exists();
         let extractor = match hub.chosen(Role::Extractor).and_then(|n| hub.config().get(&n).cloned()) {
-            Some(e) if fresh && e.config.kind != BackendKind::AgentCli => {
+            Some(e) if fresh => {
                 let _ = std::fs::remove_file(ws.root.join(EXTRACT_TRANSCRIPT));
                 Some((e.config.name.clone(), hub.start_extractor(&e, opts.beginner, Some(ws.root.join(EXTRACT_TRANSCRIPT)))?))
             }
@@ -525,29 +520,6 @@ impl Worker {
         Some(added_prompt(&texts) + &pictures_reminder(ws))
     }
 
-    /// Decides an ACP builder's permission requests with the same policy Claude Code's approval
-    /// tool uses: allowed, refused, or asked of the person through this project's inbox.
-    fn approver(&self, ws: &Workspace) -> crate::cli_agents::acp::Approver {
-        let inbox = ws.inbox_dir();
-        let (auto_mode, clean_room) = {
-            let s = self.engine.session();
-            (s.settings.auto_mode, s.clean_room())
-        };
-        let stop = self.stop.clone();
-        Arc::new(move |tool: &str, input: &Value| {
-            let r = craft_anything_engine::tools::interaction_tools::approve_with(
-                Some(Inbox::new(inbox.clone())),
-                auto_mode,
-                clean_room,
-                tool,
-                input,
-                &|| stop.is_cancelled(),
-                &mut || {},
-            );
-            matches!(r, Ok(Ok(())))
-        })
-    }
-
     /// The editor for a game-engine stack. An engine that isn't ready stops the run before any
     /// work, with the way to get it.
     fn find_editor(&self, stack: &str) -> Result<Option<PathBuf>, ToolError> {
@@ -562,39 +534,14 @@ impl Worker {
         }
     }
 
-    /// How the builder's agent runs. Reads the session once: a lock taken twice in one statement
-    /// is held by the first until the statement ends, and the second then waits forever.
-    fn agent_spec(&self, ws: &Workspace, entry: &crate::BackendEntry, opts: &RunOptions) -> CliSpec {
-        let (deep, config_dir, targets) = {
-            let session = self.engine.session();
-            (!session.clean_room(), session.config_dir(), session.shared_targets())
-        };
-        CliSpec {
-            builder: Some(Builder { investigation: Some(ws.investigation_dir()), inbox: ws.inbox_dir() }),
-            deep,
-            targets,
-            logs: Some(crate::failure_log::dir_in(&config_dir)),
-            resume: ws.manifest.agent_session.clone(),
-            preamble: Some(
-                "You work inside Craft Anything for a person who doesn't code. The message below is your task.
-
-"
-                .into(),
-            ),
-            adapters: opts.adapters.clone(),
-            ..CliSpec::new(entry.config.clone(), entry.options.clone(), opts.beginner, Some(ws.root.clone()))
-        }
-    }
-
     /// The whole run: checks the builder can start, studies a new project, then builds and checks
-    /// in rounds until it's good enough or the rounds run out. A coding agent's saved session is
-    /// put back from the project first when this computer doesn't have it, and the project keeps
-    /// a copy after every turn; when it can't be resumed, a new one starts from the brief and what
-    /// the project kept. Returns the summary shown when it's ready.
+    /// in rounds until it's good enough or the rounds run out. Every backend is NVIDIA (an
+    /// OpenAI-compatible API backend), so every run builds through our own agent loop and the Build
+    /// tools. Returns the summary shown when it's ready.
     fn run(
         &mut self,
         ws: &mut Workspace,
-        entry: crate::BackendEntry,
+        _entry: crate::BackendEntry,
         api: Option<crate::agent::ApiConversation>,
         extractor: Option<(String, crate::agent::ApiConversation)>,
         opts: &RunOptions,
@@ -608,23 +555,13 @@ impl Worker {
             progress.reset();
             progress.save(&ws.root)?;
         }
-        // Fail before any work when the agent's tools are missing or it can't sign in.
-        let remote = entry.config.ssh_host.as_deref().is_some_and(|h| !h.trim().is_empty());
-        if !remote && api.is_none() {
-            let adapter = opts.adapters.for_backend(&entry.config.model, &entry.options);
-            crate::cli_agents::check_builder_tools(adapter.as_ref(), &entry.config.model, &entry.options, &self.stop)?;
-            let program = crate::cli_agents::program_of(&entry.config, &entry.options);
-            if adapter.signed_in(&program) == Some(false) {
-                return Err(ToolError::new(ErrorCode::BadSettings, not_signed_in(&entry.config.model, adapter.signed_in_before()))
-                    .with_remediation(adapter.sign_in_fix().unwrap_or_default()));
-            }
-        }
         self.attach(ws)?;
         std::fs::create_dir_all(ws.app_dir()).map_err(|e| ToolError::io(ws.app_dir().display(), e))?;
         let no_kind = || {
             ToolError::new(ErrorCode::BadSettings, "No kind of project matches this request.")
                 .with_remediation("Describe what to make: a website, an app or a game.")
         };
+
         if ws.manifest.stack.is_empty() {
             let deep = !self.engine.session().clean_room();
             ws.manifest.stack = project::first_stack(&opts.kinds, ws, deep).ok_or_else(no_kind)?.to_string();
@@ -642,27 +579,19 @@ impl Worker {
                 self.extract(ws, kind, &name, ex)?;
             }
         }
-        // A coding agent resumes its own session; our loop resumes its kept transcript.
-        let resumable = api.as_ref().is_none_or(crate::agent::ApiConversation::resumed);
-        let api_loop = api.is_some();
-        // A session another coding agent saved can't be continued by this one (#469).
-        if !api_loop && ws.manifest.agent_session_by.as_deref() != Some(entry.config.model.as_str()) {
-            ws.manifest.agent_session = ws.manifest.agent_session_for(&entry.config.model).map(str::to_string);
-            ws.manifest.agent_session_by = Some(entry.config.model.clone());
-            ws.save()?;
-        }
-        // A coding agent on this computer whose session the project keeps a copy of (#451).
-        let keeper = (!api_loop && !remote).then(|| opts.adapters.for_backend(&entry.config.model, &entry.options));
-        if let Some(a) = &keeper {
-            self.restore_session(ws, a.as_ref());
-        }
+        // Every backend is NVIDIA (an API backend), so the run always builds through our own
+        // agent loop and the Build tools; the API conversation is always started by the caller.
+        let api_loop = true;
+        let resumable = api.as_ref().is_some_and(crate::agent::ApiConversation::resumed);
         // A coding agent that never saved a session starts over, so it needs the brief.
-        let has_history = resumable && (api_loop || ws.manifest.agent_session.is_some());
+        let has_history = resumable;
         self.step(ws, Step::Build, Status::Building, "Getting the builder ready…")?;
-        let spec = self.agent_spec(ws, &entry, opts);
         let mut agent: Box<dyn Conversation> = match api {
-            Some(a) => Box::new(a),
-            None => crate::cli_agents::builder_conversation(spec, self.approver(ws)),
+            Some(api) => Box::new(api),
+            None => {
+                return Err(ToolError::new(ErrorCode::BadSettings, "No AI backend was started for this build.")
+                    .with_remediation("Set up a NVIDIA AI backend in Settings → AI, then try again."));
+            }
         };
         // The builder's tool server is started in this run's mode (`--deep` or `--clean-room`).
         let s = self.engine.session();
@@ -687,12 +616,6 @@ impl Worker {
         if first && ws.app_dir().join(ORIGINALS_MANIFEST).is_file() {
             prompt.push_str(ORIGINALS_READY);
         }
-        // A saved session may not be on this computer (the project was copied here): then a new
-        // one starts from the brief and what the project already has.
-        let mut fresh = (!api_loop && ws.manifest.agent_session.is_some()).then(|| {
-            let handoff = keeper.as_ref().and_then(|a| a.handoff(&kept_session(ws)?, HANDOFF_CHARS));
-            resumed_elsewhere(&brief(kind, &cx, opts.message.as_deref()), &ws.manifest.last_reply, handoff.as_deref())
-        });
         let mut round = ws.manifest.checks.iter().map(|c| c.round).max().unwrap_or(0);
         // A new request starts the count of checks that found no working build again. "Try again" on
         // a build that already reached the limit stops before another builder turn is paid for (#736).
@@ -727,11 +650,7 @@ impl Worker {
                 };
                 self.step(ws, Step::Build, Status::Building, doing)?;
                 ws.manifest.awaiting_check = false;
-                let reply = self.turn(ws, agent.as_mut(), &prompt, fresh.take());
-                // Kept even when the turn failed: the conversation is still worth carrying.
-                if let Some(a) = &keeper {
-                    self.keep_session(ws, a.as_ref());
-                }
+                let reply = self.turn(ws, agent.as_mut(), &prompt, None);
                 let reply = match reply {
                     Ok(reply) => reply,
                     Err(error) => {
@@ -941,37 +860,6 @@ impl Worker {
             ToolError::new(e.code, format!("The build is finished, but it couldn't be checked: {}", e.message))
                 .with_remediation("Press Try again to check it again. Nothing needs building again.")
         })
-    }
-
-    /// A copy of the builder's session in the project, so the conversation travels with the
-    /// folder (#451). A copy that can't be made doesn't stop the build, but it's said.
-    fn keep_session(&self, ws: &Workspace, adapter: &dyn crate::cli_agents::AgentAdapter) {
-        let Some(from) = ws.manifest.agent_session.as_deref().and_then(|id| adapter.session_file(id)) else { return };
-        let kept = match std::fs::metadata(&from) {
-            Ok(m) if m.len() > MAX_KEPT_SESSION => Err(format!("it's over {} MB", MAX_KEPT_SESSION / 1_000_000)),
-            Ok(_) => std::fs::read(&from)
-                .map_err(|e| e.to_string())
-                .and_then(|b| craft_anything_platform::fs::write_atomic_private(&ws.agent_session_path(), &b).map_err(|e| e.message)),
-            Err(e) => Err(e.to_string()),
-        };
-        if let Err(why) = kept {
-            let text =
-                format!("Couldn't keep a copy of the builder's conversation in the project ({why}), so it won't go with the folder to another computer.");
-            self.emit(RunEvent::Agent(AgentEvent::Status { text }));
-        }
-    }
-
-    /// The project came from another computer with its builder's session kept in it: put it back
-    /// where the agent looks, so the same conversation carries on (#451). If that fails, a new one
-    /// starts from what the project has when the turn finds the session missing.
-    fn restore_session(&self, ws: &Workspace, adapter: &dyn crate::cli_agents::AgentAdapter) {
-        let (Some(id), Some(saved)) = (ws.manifest.agent_session.as_deref(), kept_session_bytes(ws)) else { return };
-        let text = match adapter.restore_session(id, &saved, &ws.root) {
-            Ok(false) => return,
-            Ok(true) => "Brought the builder's earlier conversation over from the project folder.".to_string(),
-            Err(e) => format!("Couldn't bring the builder's earlier conversation over from the project folder ({}).", e.message),
-        };
-        self.emit(RunEvent::Agent(AgentEvent::Status { text }));
     }
 
     /// `fresh`: what to send instead when the agent's saved session turns out not to be on this
@@ -1193,32 +1081,6 @@ fn no_files_yet(ws: &Workspace) -> String {
     format!("{} has no files yet, so the builder hasn't written the project.", ws.app_place())
 }
 
-/// Why a coding agent can't build: never signed in, or signed in `before` with a sign-in that no
-/// longer works (expired, or signed out), which the person may not expect.
-fn not_signed_in(agent: &str, before: bool) -> String {
-    let who = crate::cli_agents::display_for(agent);
-    if before { format!("{who}'s sign-in on this computer has expired or was signed out.") } else { format!("{who} isn't signed in on this computer.") }
-}
-
-/// Largest builder session the project keeps a copy of.
-const MAX_KEPT_SESSION: u64 = 64_000_000;
-/// How much of a kept session a new one is handed when the old one isn't on this computer.
-const HANDOFF_CHARS: usize = 16_000;
-
-/// The builder's session as the project kept it, if it did.
-fn kept_session_bytes(ws: &Workspace) -> Option<Vec<u8>> {
-    let path = ws.agent_session_path();
-    if std::fs::metadata(&path).ok()?.len() > MAX_KEPT_SESSION {
-        return None;
-    }
-    std::fs::read(path).ok()
-}
-
-/// The kept session as text, for a handoff (a broken byte doesn't lose the rest).
-fn kept_session(ws: &Workspace) -> Option<String> {
-    kept_session_bytes(ws).map(|b| String::from_utf8_lossy(&b).into_owned())
-}
-
 /// What an API-backend builder is told first: its tools differ from an agent app's.
 const API_BUILDER: &str = "Your tools: build_files_list, build_file_read, build_file_write and build_file_edit for the project's files (paths relative to the project folder, e.g. app/src/main.rs), and build_command_run for commands, which run in app/ (never start dev servers or watchers). Where the steps below mention Read, Write, Edit or Bash, use these. For the checklist step use build_checklist (the same shape as TodoWrite: todos with content, activeForm and status) and call it again as you go. You can't look at pictures: use capture/README.md, capture/capture.json and the evidence instead. Ask the person with core_person_ask only when a choice really changes the result. Other Craft Anything tools are available too; enable a toolset with enable_toolset when you need it. rebuild_check isn't available in this loop: Craft Anything checks your build after each turn instead.";
 
@@ -1236,9 +1098,7 @@ pub fn project_builder<'a>(cfg: &crate::AiConfig, ws: &'a Workspace) -> Option<&
 pub fn builder_backend(cfg: &crate::AiConfig, named: Option<&str>) -> Result<crate::BackendEntry, ToolError> {
     let found = match named {
         Some(n) => cfg.get(n).cloned(),
-        None => {
-            cfg.backend_for(Role::Builder).or_else(|| cfg.enabled().find(|b| b.config.kind == BackendKind::AgentCli)).or_else(|| cfg.enabled().next()).cloned()
-        }
+        None => cfg.backend_for(Role::Builder).or_else(|| cfg.enabled().next()).cloned(),
     };
     found.ok_or_else(|| {
         ToolError::new(ErrorCode::BadSettings, "Building needs a coding agent (such as Claude Code) or an AI backend with an API key.")

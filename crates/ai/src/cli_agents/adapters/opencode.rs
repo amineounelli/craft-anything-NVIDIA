@@ -283,7 +283,7 @@ mod tests {
     fn extra_model_arguments_are_checked_only_for_explicit_selections() {
         let config = BackendConfig {
             name: "OpenCode".into(),
-            kind: crate::BackendKind::AgentCli,
+            kind: crate::BackendKind::Nvidia,
             model: "opencode".into(),
             base_url: None,
             ssh_host: None,

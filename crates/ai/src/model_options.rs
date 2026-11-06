@@ -10,7 +10,7 @@ use serde_json::Value;
 
 /// A cheap capability query for the settings UI; model discovery itself runs on a worker.
 pub fn supported(config: &BackendConfig) -> bool {
-    config.kind == BackendKind::AgentCli && crate::cli_agents::adapter_for(&config.model).supports_model_tuning()
+    config.kind == BackendKind::Nvidia && crate::cli_agents::adapter_for(&config.model).supports_model_tuning()
 }
 
 /// Persistable choices, with the selected backend model captured to reject a stale picker.
@@ -148,7 +148,7 @@ mod tests {
         cancel.cancel();
         let stop = crate::model::Stop::for_tool(cancel);
         let config =
-            BackendConfig { name: "Test Copilot".into(), kind: BackendKind::AgentCli, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
+            BackendConfig { name: "Test Copilot".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
         let options = crate::BackendOptions { command: Some("craft-anything-no-such-test-agent".into()), ..Default::default() };
         assert_eq!(crate::cli_agents::acp_model_tuning(&config, &options, &stop).unwrap_err().code, craft_anything_evidence::ErrorCode::Cancelled);
     }
@@ -176,14 +176,7 @@ mod tests {
         let mut session = Session::isolated(directory.path());
         let mut config = AiConfig::default();
         config.upsert(BackendEntry {
-            config: BackendConfig {
-                name: "Copilot".into(),
-                kind: BackendKind::AgentCli,
-                model: "copilot".into(),
-                base_url: None,
-                ssh_host: None,
-                enabled: true,
-            },
+            config: BackendConfig { name: "Copilot".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true },
             options: BackendOptions { cli_model: Some("test-model".into()), cli_thinking: Some(crate::Effort::None), ..Default::default() },
         });
         session.settings.ai = config.to_table().unwrap();

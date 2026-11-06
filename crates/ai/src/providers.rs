@@ -24,89 +24,15 @@ pub struct Provider {
 /// The priced APIs we can talk to over an OpenAI-compatible endpoint. Pay-as-you-go services are
 /// offered only when their key is already set, like OpenAI and Anthropic, so nobody is advertised
 /// a service they cannot use.
-pub const PROVIDERS: &[Provider] = &[
-    Provider {
-        name: "Moonshot",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.moonshot.ai/v1",
-        key_env: "MOONSHOT_API_KEY",
-        alt_key_env: None,
-        default_model: "kimi-k3.1-pro",
-        catalog_id: "moonshotai",
-    },
-    Provider {
-        name: "DeepSeek",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.deepseek.com/v1",
-        key_env: "DEEPSEEK_API_KEY",
-        alt_key_env: None,
-        default_model: "deepseek-flash",
-        catalog_id: "deepseek",
-    },
-    Provider {
-        name: "xAI (Grok)",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.x.ai/v1",
-        key_env: "XAI_API_KEY",
-        alt_key_env: None,
-        default_model: "grok-4.7",
-        catalog_id: "xai",
-    },
-    Provider {
-        name: "Groq",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.groq.com/openai/v1",
-        key_env: "GROQ_API_KEY",
-        alt_key_env: None,
-        default_model: "openai/gpt-oss-120b",
-        catalog_id: "groq",
-    },
-    Provider {
-        name: "Mistral",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.mistral.ai/v1",
-        key_env: "MISTRAL_API_KEY",
-        alt_key_env: None,
-        default_model: "mistral-large-4",
-        catalog_id: "mistral",
-    },
-    Provider {
-        name: "Together",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.together.xyz/v1",
-        key_env: "TOGETHER_API_KEY",
-        alt_key_env: None,
-        default_model: "deepseek-ai/DeepSeek-V4.1-Flash",
-        catalog_id: "togetherai",
-    },
-    Provider {
-        name: "Fireworks",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.fireworks.ai/inference/v1",
-        key_env: "FIREWORKS_API_KEY",
-        alt_key_env: None,
-        default_model: "accounts/fireworks/models/gpt-oss-120b",
-        catalog_id: "fireworks-ai",
-    },
-    Provider {
-        name: "DeepInfra",
-        kind: BackendKind::OpenaiCompatible,
-        base_url: "https://api.deepinfra.com/v1/openai",
-        key_env: "DEEPINFRA_API_KEY",
-        alt_key_env: None,
-        default_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-        catalog_id: "deepinfra",
-    },
-    Provider {
-        name: "NVIDIA (NIM API)",
-        kind: BackendKind::Nvidia,
-        base_url: "https://integrate.api.nvidia.com/v1",
-        key_env: "NVIDIA_API_KEY",
-        alt_key_env: None,
-        default_model: "nvidia/nemotron-4-340b-instruct",
-        catalog_id: "nvidia",
-    },
-];
+pub const PROVIDERS: &[Provider] = &[Provider {
+    name: "NVIDIA (NIM API)",
+    kind: BackendKind::Nvidia,
+    base_url: "https://integrate.api.nvidia.com/v1",
+    key_env: "NVIDIA_API_KEY",
+    alt_key_env: None,
+    default_model: "nvidia/nemotron-4-340b-instruct",
+    catalog_id: "nvidia",
+}];
 
 impl Provider {
     /// The key names this provider accepts, in order.
@@ -163,9 +89,7 @@ mod tests {
             assert!(!p.key_env.trim().is_empty(), "{} has no key variable", p.name);
             assert!(!p.default_model.trim().is_empty(), "{} has no default model", p.name);
             assert!(!p.catalog_id.trim().is_empty(), "{} has no catalogue id", p.name);
-            if p.kind == BackendKind::OpenaiCompatible {
-                assert!(p.base_url.starts_with("https://"), "{} is not https", p.name);
-            }
+            assert!(p.base_url.starts_with("https://"), "{} is not https", p.name);
         }
         let mut names: Vec<&str> = PROVIDERS.iter().map(|p| p.name).collect();
         names.sort_unstable();
@@ -195,26 +119,26 @@ mod tests {
     /// A plain-HTTP base never receives a key, and a base missing `/v1` still finds its row.
     #[test]
     fn only_https_bases_are_recognised() {
-        assert!(of_base("http://api.deepseek.com/v1").is_none());
-        assert_eq!(of_base("https://api.deepseek.com"), Some(&PROVIDERS[1]));
-        assert_eq!(of_base("HTTPS://API.DEEPSEEK.COM/v1"), Some(&PROVIDERS[1]));
+        assert!(of_base("http://integrate.api.nvidia.com/v1").is_none());
+        assert_eq!(of_base("https://integrate.api.nvidia.com"), Some(&PROVIDERS[0]));
+        assert_eq!(of_base("HTTPS://INTEGRATE.API.NVIDIA.COM/v1"), Some(&PROVIDERS[0]));
     }
 
     /// A blank variable counts as unset, so the next name is tried.
     #[test]
     fn a_blank_key_falls_through_to_the_next_name() {
-        let base = "https://api.deepseek.com/v1";
+        let base = "https://integrate.api.nvidia.com/v1";
         let empty = env_key_with(base, |_| Some("  ".into()));
         assert_eq!(empty, None);
-        let found = env_key_with(base, |name| (name == "DEEPSEEK_API_KEY").then(|| "k".to_string()));
+        let found = env_key_with(base, |name| (name == "NVIDIA_API_KEY").then(|| "k".to_string()));
         assert_eq!(found.as_deref(), Some("k"));
     }
 
     /// A base URL finds its row, with or without a trailing slash; someone else's doesn't.
     #[test]
     fn a_base_url_finds_its_provider() {
-        assert_eq!(of_base("https://api.deepseek.com/v1"), Some(&PROVIDERS[1]));
-        assert_eq!(of_base("https://api.deepseek.com/v1/"), Some(&PROVIDERS[1]));
+        assert_eq!(of_base("https://integrate.api.nvidia.com/v1"), Some(&PROVIDERS[0]));
+        assert_eq!(of_base("https://integrate.api.nvidia.com/v1/"), Some(&PROVIDERS[0]));
         assert_eq!(of_base("http://127.0.0.1:11434/v1"), None);
         assert_eq!(of_base("https://api.example.test/v1"), None);
     }

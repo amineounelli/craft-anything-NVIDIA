@@ -130,7 +130,7 @@ pub fn app(engine: Arc<Engine>) -> CraftApp {
     app.headless = true;
     app.backends = vec![BackendConfig {
         name: "Claude".into(),
-        kind: BackendKind::Anthropic,
+        kind: BackendKind::Nvidia,
         model: "claude-opus-5-5".into(),
         base_url: None,
         ssh_host: None,
@@ -200,16 +200,15 @@ pub fn detected() -> Vec<Detected> {
     let cfg = |name: &str, kind, model: &str| BackendConfig { name: name.into(), kind, model: model.into(), base_url: None, ssh_host: None, enabled: true };
     vec![
         Detected {
-            suggestion: cfg("Claude Code", BackendKind::AgentCli, "claude-code"),
-            reason: "Found the claude command on this computer.".into(),
+            suggestion: cfg("NVIDIA NIM API", BackendKind::Nvidia, "nvidia/nemotron-4-340b-instruct"),
+            reason: "Found NVIDIA_API_KEY in your environment.".into(),
             needs_key: false,
         },
         Detected {
-            suggestion: cfg("Ollama", BackendKind::OpenaiCompatible, "llama3.2"),
-            reason: "Found Ollama running with 3 models.".into(),
-            needs_key: false,
+            suggestion: cfg("NVIDIA NIM API", BackendKind::Nvidia, "nvidia/llama-3.1-nemotron-70b-instruct"),
+            reason: "NVIDIA model server reachable at integrate.api.nvidia.com.".into(),
+            needs_key: true,
         },
-        Detected { suggestion: cfg("OpenRouter", BackendKind::Openrouter, "auto"), reason: "Use any model through one key.".into(), needs_key: true },
     ]
 }
 
@@ -248,8 +247,8 @@ fn workspace(slug: &str, name: &str, request: &str, target: TargetRef, status: S
 pub fn fill_projects(app: &mut CraftApp) {
     app.backends = vec![BackendConfig {
         name: "Claude Code".into(),
-        kind: BackendKind::AgentCli,
-        model: "claude-code".into(),
+        kind: BackendKind::Nvidia,
+        model: "nvidia/nemotron-4-340b-instruct".into(),
         base_url: None,
         ssh_host: None,
         enabled: true,
@@ -284,8 +283,8 @@ pub fn fill_project(app: &mut CraftApp) {
     ws.manifest.checks.push(check.clone());
     app.backends = vec![BackendConfig {
         name: "Claude Code".into(),
-        kind: BackendKind::AgentCli,
-        model: "claude-code".into(),
+        kind: BackendKind::Nvidia,
+        model: "nvidia/nemotron-4-340b-instruct".into(),
         base_url: None,
         ssh_host: None,
         enabled: true,

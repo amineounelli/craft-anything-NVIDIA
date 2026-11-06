@@ -1176,8 +1176,7 @@ fn an_agent_apps_program_is_set_in_settings() {
     use craft_anything_ai::{BackendConfig, BackendKind};
     let mut h = harness(|| {
         let a = demo::app(demo::engine(Mode::Experienced, true));
-        let cfg =
-            BackendConfig { name: "OpenCode".into(), kind: BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true };
+        let cfg = BackendConfig { name: "OpenCode".into(), kind: BackendKind::Nvidia, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true };
         a.hub.add_backend(cfg, None).unwrap();
         a
     });
@@ -1202,14 +1201,8 @@ fn a_claude_ais_effort_is_set_in_settings() {
     use craft_anything_ai::{BackendConfig, BackendKind, Effort};
     let mut h = harness(|| {
         let a = demo::app(demo::engine(Mode::Experienced, true));
-        let cfg = BackendConfig {
-            name: "Claude Code".into(),
-            kind: BackendKind::AgentCli,
-            model: "claude-code".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
+        let cfg =
+            BackendConfig { name: "Claude Code".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         a.hub.add_backend(cfg, None).unwrap();
         a
     });
@@ -1238,7 +1231,7 @@ fn opencode_picker_offers_only_the_selected_models_thinking_depths() {
         let mut a = demo::app(demo::engine(Mode::Experienced, true));
         a.hub
             .add_backend(
-                BackendConfig { name: "OpenCode".into(), kind: BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true },
+                BackendConfig { name: "OpenCode".into(), kind: BackendKind::Nvidia, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true },
                 None,
             )
             .unwrap();
@@ -1286,14 +1279,8 @@ fn claude_codes_account_folder_is_set_in_settings() {
     use craft_anything_ai::{BackendConfig, BackendKind};
     let mut h = harness(|| {
         let mut a = demo::app(demo::engine(Mode::Experienced, true));
-        let cfg = BackendConfig {
-            name: "Claude Code".into(),
-            kind: BackendKind::AgentCli,
-            model: "claude-code".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
+        let cfg =
+            BackendConfig { name: "Claude Code".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         a.hub.add_backend(cfg, None).unwrap();
         a.detected = Some(demo::detected());
         a
@@ -1447,7 +1434,7 @@ fn stand_in_app(projects: std::path::PathBuf, runs: &craft_anything_ai::rebuild:
     let engine = demo::engine(Mode::Beginner, true);
     let mut cfg = AiConfig::default();
     let agent =
-        BackendConfig { name: "Claude Code".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+        BackendConfig { name: "Claude Code".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
     cfg.upsert(BackendEntry { config: agent, options: BackendOptions::default() });
     engine.session().settings.ai = cfg.to_table().unwrap();
     let mut app = demo::app(engine);
@@ -1861,14 +1848,8 @@ fn a_running_build_says_what_it_is_on_and_opens_up_into_its_activity() {
     let mut h = harness(move || {
         let engine = demo::engine(Mode::Beginner, true);
         let mut cfg = AiConfig::default();
-        let agent = BackendConfig {
-            name: "Claude Code".into(),
-            kind: BackendKind::AgentCli,
-            model: "claude-code".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
+        let agent =
+            BackendConfig { name: "Claude Code".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         cfg.upsert(BackendEntry { config: agent, options: BackendOptions::default() });
         engine.session().settings.ai = cfg.to_table().unwrap();
         let mut app = demo::app(engine);
@@ -1923,14 +1904,8 @@ fn a_build_that_stopped_part_way_offers_to_continue() {
     let mut h = harness(move || {
         let engine = demo::engine(Mode::Beginner, true);
         let mut cfg = AiConfig::default();
-        let agent = BackendConfig {
-            name: "Claude Code".into(),
-            kind: BackendKind::AgentCli,
-            model: "claude-code".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
+        let agent =
+            BackendConfig { name: "Claude Code".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         cfg.upsert(BackendEntry { config: agent, options: BackendOptions::default() });
         engine.session().settings.ai = cfg.to_table().unwrap();
         let mut app = demo::app(engine);
@@ -2280,7 +2255,7 @@ fn make_says_who_builds_and_a_picked_builder_stays_with_the_project() {
         let mut a = stand_in_app(dir, &r);
         // Claude Code is set up, and so is an API key.
         let cfg = |name: &str, kind, model: &str| BackendConfig { name: name.into(), kind, model: model.into(), base_url: None, ssh_host: None, enabled: true };
-        a.backends = vec![cfg("Claude", BackendKind::Anthropic, "claude-opus-5-5"), cfg("Claude Code", BackendKind::AgentCli, "claude-code")];
+        a.backends = vec![cfg("Claude", BackendKind::Nvidia, "claude-opus-5-5"), cfg("Claude Code", BackendKind::Nvidia, "claude-code")];
         a
     });
     h.run_steps(3);
@@ -2313,44 +2288,24 @@ fn with_nothing_to_build_with_start_offers_what_was_found_instead_of_a_dead_end(
         a
     });
     h.run_steps(3);
-    h.get_by_label("Building needs a coding agent such as Claude Code, or an AI with an API key.");
+    h.get_by_label("Building needs an AI with an API key.");
     h.state_mut().state.make.request = "A notes app".into();
     // The fixture supplies discovery results; keep host detection out of this UI test.
     h.state_mut().detecting = true;
     h.state_mut().start_make();
     h.run_steps(2);
     assert_eq!(h.state().state.modal, Some(Modal::NeedBuilder { start: true }));
-    // The simulated discovery has now found an agent.
+    // A detected NVIDIA backend is added as a buildable AI.
     h.state_mut().detecting = false;
-    h.state_mut().detected = Some(demo::detected());
+    let detected = demo::detected().into_iter().map(|d| d.suggestion).collect::<Vec<_>>();
+    for b in detected {
+        h.state_mut().backends.push(b);
+    }
+    h.state_mut().backend_options = h.state_mut().hub.options();
     h.run_steps(2);
     h.get_by_label("Look again");
     h.get_by_label("Use an API key…");
-    assert!(h.state().can_build(), "an agent app that was found can build: one rule for the warning and Start");
-    h.get_by_label("Build with Claude Code");
-}
-
-/// #259: with only the Claude desktop app installed, the dialog says that building needs Claude
-/// Code apart from it, instead of only "No coding agent was found".
-#[test]
-fn only_the_claude_desktop_app_is_named_when_nothing_can_build() {
-    use craft_anything_ai::detect::DetectHint;
-    let mut h = harness(|| {
-        let mut a = demo::app(demo::engine(Mode::Beginner, true));
-        a.backends.clear();
-        a.detected = Some(Vec::new());
-        a
-    });
-    h.run_steps(3);
-    h.state_mut().state.make.request = "A notes app".into();
-    h.state_mut().start_make();
-    // The dialog looks on this computer when it opens; let that finish before standing in for it.
-    assert!(wait(&mut h, |a| !a.detecting));
-    h.state_mut().detected = Some(Vec::new());
-    h.state_mut().detect_hints = vec![DetectHint::ClaudeDesktopWithoutCli { app: "Claude".into() }];
-    h.run_steps(2);
-    h.get_by_label("No coding agent was found on this computer yet.");
-    h.get_by_label("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.");
+    assert!(h.state().can_build(), "an AI that was found can build: one rule for the warning and Start");
 }
 
 #[test]

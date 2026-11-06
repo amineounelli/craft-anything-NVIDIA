@@ -85,7 +85,7 @@ fn ensure_agent(hub: &AiHub, requested: Option<&str>) -> Result<(), ToolError> {
     }
     // An explicit name may be an installed agent that isn't added yet: add only that one. With no
     // name, add the first agent found.
-    if let Some(d) = hub.detect().into_iter().find(|d| d.suggestion.kind == BackendKind::AgentCli && requested.is_none_or(|name| d.suggestion.name == name)) {
+    if let Some(d) = hub.detect().into_iter().find(|d| d.suggestion.kind == BackendKind::Nvidia && requested.is_none_or(|name| d.suggestion.name == name)) {
         eprintln!("Using {} ({}).", d.suggestion.name, d.reason);
         hub.add_backend(d.suggestion, None)?;
     }

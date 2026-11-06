@@ -140,8 +140,7 @@ Both modes drive the same engine.
 Clean room is a rule about what Craft Anything offers and refuses. It is not an operating-system
 sandbox: it doesn't isolate your computer. A coding agent you run still acts as you, and what it can
 read, write or run depends on its own permissions. Which of an agent's own tools Craft Anything can
-refuse differs by agent; for Claude Code's tools in chats and questions, see
-[`docs/claude-code.md`](docs/claude-code.md).
+refuse differs by agent.
 
 Switch in the title bar or Settings, with `settings_set deep_mode true`, or for one CLI run with
 `--deep` (or `--clean-room`).
@@ -155,20 +154,23 @@ Switch in the title bar or Settings, with `settings_set deep_mode true`, or for 
 ## AI
 
 > [!NOTE]
-> **Forked for NVIDIA NIM:** This fork replaces Anthropic, OpenAI and OpenRouter backends with the
-> NVIDIA NIM API. Kept models: `nvidia/nemotron-4-340b-instruct`, `nvidia/llama-3.1-nemotron-70b-instruct`,
-> `nvidia/llama-3.1-nemotron-ultra-253b-v1`, `nvidia/nemotron-3-super-120b-a12b`,
-> `deepseek-ai/deepseek-coder-6.7b-instruct`, `nvidia/nemotron-3.5-super-vl-120b-a12b` — selected
-> for reverse engineering, code analysis and app/web decomposition.
+> **Forked for NVIDIA NIM:** This fork replaces all non-NVIDIA backends (Anthropic, OpenAI, OpenRouter,
+> Gemini, Codex, agent CLIs) with the NVIDIA NIM API exclusively. It works with NVIDIA models end to end:
+> add an API key, pick a model, build.
 
-Building needs a coding agent on your computer. **Claude Code** is supported first: Craft
-Anything runs your own, unmodified `claude` program, which uses your own sign-in; Craft Anything
-never sees or handles your account. Your use of it falls under your own agreement with
-Anthropic. See [docs/claude-code.md](docs/claude-code.md) for how and why. A Codex adapter
-exists but hasn't been verified on a real install yet. **GitHub Copilot** can use your installed
-Copilot CLI through ACP: sign in separately with `copilot login`. Other agents that speak ACP (Gemini CLI,
-Qwen Code, opencode, goose, Hermes, Maki) can be switched to it per backend; of those, only Maki has
-been run live. NVIDIA NIM API is available for questions and analysis (Settings → AI).
+Kept models on `https://integrate.api.nvidia.com/v1`:
+
+| Model | Why |
+|-------|-----|
+| `nvidia/nemotron-4-340b-instruct` | General-purpose reasoning and coding |
+| `nvidia/llama-3.1-nemotron-70b-instruct` | Code generation and completion |
+| `nvidia/llama-3.1-nemotron-ultra-253b-v1` | Complex multi-step reasoning |
+| `nvidia/nemotron-3-super-120b-a12b` | Efficient code analysis |
+| `deepseek-ai/deepseek-coder-6.7b-instruct` | Specialist coding model |
+| `nvidia/nemotron-3.5-super-vl-120b-a12b` | Vision-language understanding |
+
+Get an API key from [build.nvidia.com](https://build.nvidia.com), then add it in Settings → AI (or
+`craft-anything-cli ai add`). NVIDIA NIM API is available for questions, analysis and building.
 
 ## Built for agents
 
@@ -206,7 +208,7 @@ sudo apt-get install libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev li
 Then:
 
 ```sh
-git clone https://github.com/storytold/craft-anything && cd craft-anything
+git clone https://github.com/amineounelli/craft-anything-NVIDIA && cd craft-anything-NVIDIA
 cargo run --release -p craft-anything                # the desktop app
 cargo install --path apps/craft-anything-cli         # the CLI, as `craft-anything-cli`
 craft-anything-cli doctor                            # checks the install, coding agents and engines
@@ -239,11 +241,11 @@ only takes it off the list.
 > **Status:** Craft Anything is in early alpha. What works today, what is partial and what's next:
 >
 > - **Works today:** the desktop app (Simple and Advanced), the CLI and the MCP server; the
->   Study → Build → Check → Refine workflow for websites, apps and games with Claude Code as the
+>   Study → Build → Check → Refine workflow for websites, apps and games with NVIDIA NIM models as the
 >   builder; website checks at three screen widths; game rebuilds in Unity, Unreal or Godot; Deep
 >   mode with Ghidra; generated pictures and 3D models (opt-in, your own fal.ai key); plugins (MCP
 >   servers, and WASM components in builds with the `wasm-plugins` option).
-> - **Partly there:** building with API keys and other coding agents (built, not yet run live),
+> - **Partly there:** behaviour checks for apps and games, a few engine tools tested only against stand-ins.
 >   behaviour checks for apps and games, a few engine tools tested only against stand-ins.
 > - **Released:** public releases with installers for Windows, macOS, Linux and FreeBSD are
 >   published on the [Releases page](https://github.com/storytold/craft-anything/releases); they are

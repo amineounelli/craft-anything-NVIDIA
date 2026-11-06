@@ -1,4 +1,5 @@
 use super::*;
+use crate::BackendKind;
 use crate::agent::tests::{Scripted, turn};
 use crate::agent::{ApiConversation, EngineHost, LoopConfig, ModelSlot};
 use crate::model::{Block, ChatModel, Delta, Msg, Stop, StopReason, TurnRequest, TurnResult};
@@ -58,7 +59,7 @@ fn run_idle_builder(create_app_dir: bool) -> (ToolError, Vec<Vec<Msg>>) {
     let entry = crate::BackendEntry {
         config: crate::BackendConfig {
             name: "Scripted".into(),
-            kind: BackendKind::OpenaiCompatible,
+            kind: BackendKind::Nvidia,
             model: "scripted".into(),
             base_url: None,
             ssh_host: None,
@@ -130,14 +131,7 @@ fn run_busy_builder(ws: &mut Workspace, seen: &Arc<Mutex<usize>>, message: Optio
     let slot = ModelSlot { name: "Busy".into(), model: Box::new(model), local: true, effort: None, max_turns: 10, context_tokens: 0 };
     let api = ApiConversation::start(Arc::new(EngineHost(worker.engine.clone())), vec![slot], LoopConfig::default()).unwrap();
     let entry = crate::BackendEntry {
-        config: crate::BackendConfig {
-            name: "Busy".into(),
-            kind: BackendKind::OpenaiCompatible,
-            model: "busy".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        },
+        config: crate::BackendConfig { name: "Busy".into(), kind: BackendKind::Nvidia, model: "busy".into(), base_url: None, ssh_host: None, enabled: true },
         options: Default::default(),
     };
     let mut kinds = KindRegistry::built_in();

@@ -2291,8 +2291,8 @@ mod tests {
         let mut app = crate::demo::app(crate::demo::engine(craft_anything_engine::Mode::Beginner, true));
         app.backends.push(craft_anything_ai::BackendConfig {
             name: "Claude Code".into(),
-            kind: craft_anything_ai::BackendKind::AgentCli,
-            model: "claude-code".into(),
+            kind: craft_anything_ai::BackendKind::Nvidia,
+            model: "nvidia/nemotron-4-340b-instruct".into(),
             base_url: None,
             ssh_host: None,
             enabled: true,
@@ -2315,8 +2315,8 @@ mod tests {
         app.settings.projects_dir = Some(d.path().join("projects"));
         app.backends.push(craft_anything_ai::BackendConfig {
             name: "Claude Code".into(),
-            kind: craft_anything_ai::BackendKind::AgentCli,
-            model: "claude-code".into(),
+            kind: craft_anything_ai::BackendKind::Nvidia,
+            model: "nvidia/nemotron-4-340b-instruct".into(),
             base_url: None,
             ssh_host: None,
             enabled: true,
@@ -2341,8 +2341,8 @@ mod tests {
         app.settings.projects_dir = Some(d.path().join("projects"));
         app.backends.push(craft_anything_ai::BackendConfig {
             name: "Claude Code".into(),
-            kind: craft_anything_ai::BackendKind::AgentCli,
-            model: "claude-code".into(),
+            kind: craft_anything_ai::BackendKind::Nvidia,
+            model: "nvidia/nemotron-4-340b-instruct".into(),
             base_url: None,
             ssh_host: None,
             enabled: true,

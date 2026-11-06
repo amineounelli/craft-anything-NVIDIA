@@ -13,7 +13,7 @@ pub mod adapters;
 pub mod models;
 mod shared;
 
-pub(crate) use shared::SharedConversation;
+// SharedConversation is dead code in the NVIDIA-only fork (agent CLI code paths are not active).
 
 pub use acp::AcpConversation;
 pub use adapters::{AgentAdapter, AgentAdapters, ArgsCx};
@@ -1112,7 +1112,7 @@ mod tests {
         let gone = bin.join("build-1").join("codex.exe");
         let config = |ssh: Option<&str>| BackendConfig {
             name: "Codex".into(),
-            kind: crate::BackendKind::AgentCli,
+            kind: crate::BackendKind::Nvidia,
             model: "codex".into(),
             base_url: None,
             ssh_host: ssh.map(str::to_string),
@@ -1299,7 +1299,7 @@ mod tests {
                     for building in [false, true] {
                         let config = BackendConfig {
                             name: "OpenCode".into(),
-                            kind: BackendKind::AgentCli,
+                            kind: BackendKind::Nvidia,
                             model: "opencode".into(),
                             base_url: None,
                             ssh_host: host.map(str::to_string),
@@ -1355,7 +1355,7 @@ mod tests {
         for code in [ErrorCode::Cancelled, ErrorCode::BadInput, ErrorCode::TimedOut] {
             let config = BackendConfig {
                 name: "Test".into(),
-                kind: BackendKind::AgentCli,
+                kind: BackendKind::Nvidia,
                 model: "test-validation".into(),
                 base_url: None,
                 ssh_host: None,
@@ -1409,7 +1409,7 @@ mod tests {
         }
         assert_eq!(a[pos("--resume") + 1], "sess-1");
         assert_eq!(a[pos("--allowedTools") + 1], "mcp__craft-anything__*");
-        assert_eq!(a[pos("--model") + 1], "claude-opus-5-5", "Opus 5.5 unless configured otherwise");
+        assert_eq!(a[pos("--model") + 1], crate::openai::NVIDIA_DEFAULT_MODEL, "NVIDIA default model unless configured otherwise");
         let o = BackendOptions { cli_model: Some("opus".into()), ..Default::default() };
         let b = build_args(adapter_for("claude-code").as_ref(), &o, "q", "PRE", &mcp(), None, Access::Analyse);
         assert_eq!(b[b.iter().position(|x| x == "--model").unwrap() + 1], "opus");
@@ -1554,7 +1554,7 @@ mod tests {
     fn context(host: Option<&str>, logs: Option<PathBuf>) -> FailureContext {
         let config = BackendConfig {
             name: "Mine".into(),
-            kind: BackendKind::AgentCli,
+            kind: BackendKind::Nvidia,
             model: "claude-code".into(),
             base_url: None,
             ssh_host: host.map(str::to_string),
@@ -1730,14 +1730,7 @@ mod tests {
             deep,
             builder: builder.then(|| Builder { investigation: None, inbox: PathBuf::from("/p/inbox") }),
             ..CliSpec::new(
-                BackendConfig {
-                    name: "Claude".into(),
-                    kind: BackendKind::AgentCli,
-                    model: "claude-code".into(),
-                    base_url: None,
-                    ssh_host: None,
-                    enabled: true,
-                },
+                BackendConfig { name: "Claude".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true },
                 BackendOptions::default(),
                 false,
                 None,
@@ -1898,7 +1891,7 @@ mod tests {
     fn generic_cli_runs_through_owned_process_and_streams_text() {
         // `echo` stands in for an unknown agent CLI: prompt via argv, stdout as text.
         let spec = CliSpec::new(
-            BackendConfig { name: "Echo".into(), kind: BackendKind::AgentCli, model: "echo".into(), base_url: None, ssh_host: None, enabled: true },
+            BackendConfig { name: "Echo".into(), kind: BackendKind::Nvidia, model: "echo".into(), base_url: None, ssh_host: None, enabled: true },
             BackendOptions::default(),
             true,
             None,
@@ -1942,7 +1935,7 @@ mod tests {
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
             let config = BackendConfig {
                 name: "Antigravity".into(),
-                kind: BackendKind::AgentCli,
+                kind: BackendKind::Nvidia,
                 model: "antigravity".into(),
                 base_url: None,
                 ssh_host: None,
@@ -1992,7 +1985,7 @@ mod tests {
         std::fs::write(&program, format!("#!/bin/sh\nn=$(wc -c)\nprintf '{reply}' $n\n")).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let config =
-            BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+            BackendConfig { name: "Claude".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
         let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
         c.send(&"a".repeat(40_000));
@@ -2025,7 +2018,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         for prompt in ["q".to_string(), "x".repeat(40_831)] {
             let config =
-                BackendConfig { name: "Codex".into(), kind: BackendKind::AgentCli, model: "codex".into(), base_url: None, ssh_host: None, enabled: true };
+                BackendConfig { name: "Codex".into(), kind: BackendKind::Nvidia, model: "codex".into(), base_url: None, ssh_host: None, enabled: true };
             let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
             let mut spec = CliSpec::new(config, options, false, None);
             spec.preamble = Some("P:".into());
@@ -2090,7 +2083,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         for prompt in ["q".to_string(), "x".repeat(40_831)] {
             let _ = std::fs::remove_file(dir.path().join("stdin"));
             let config =
-                BackendConfig { name: "Gemini".into(), kind: BackendKind::AgentCli, model: "gemini-cli".into(), base_url: None, ssh_host: None, enabled: true };
+                BackendConfig { name: "Gemini".into(), kind: BackendKind::Nvidia, model: "gemini-cli".into(), base_url: None, ssh_host: None, enabled: true };
             let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
             let mut spec = CliSpec::new(config, options, false, None);
             spec.preamble = Some("P:".into());
@@ -2151,7 +2144,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         std::fs::write(&program, format!("#!/bin/sh\ncat >/dev/null\necho '{reply}'\n")).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let config =
-            BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
+            BackendConfig { name: "Claude".into(), kind: BackendKind::Nvidia, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
         let options = BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
         let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
         for round in 0..25 {
@@ -2238,7 +2231,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         let spec = CliSpec::new(
             BackendConfig {
                 name: "Nope".into(),
-                kind: BackendKind::AgentCli,
+                kind: BackendKind::Nvidia,
                 model: "no-such-agent-cli-xyz".into(),
                 base_url: None,
                 ssh_host: None,
@@ -2265,7 +2258,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     fn codex_is_never_run_plain() {
         assert!(!adapter_for("codex").plain_fallback() && adapters::Plain.plain_fallback());
         let options = BackendOptions { command: Some("no-such-codex-xyz".into()), ..Default::default() };
-        let config = BackendConfig { name: "Codex".into(), kind: BackendKind::AgentCli, model: "codex".into(), base_url: None, ssh_host: None, enabled: true };
+        let config = BackendConfig { name: "Codex".into(), kind: BackendKind::Nvidia, model: "codex".into(), base_url: None, ssh_host: None, enabled: true };
         let mut c = CliConversation::new(CliSpec::new(config, options, false, None));
         c.send("What does this program do?");
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -2311,7 +2304,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     #[test]
     fn copilot_defaults_to_local_acp_without_changing_other_agents() {
         let config =
-            BackendConfig { name: "Copilot".into(), kind: BackendKind::AgentCli, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
+            BackendConfig { name: "Copilot".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
         let mut spec = CliSpec::new(config, BackendOptions::default(), false, None);
         assert!(acp_for(&spec).is_some());
         assert_eq!(program_for("copilot"), "copilot");
@@ -2339,7 +2332,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         let directory = tempfile::tempdir().unwrap();
         for count in [0, 128, 129, 130] {
             let config =
-                BackendConfig { name: "Test".into(), kind: BackendKind::AgentCli, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
+                BackendConfig { name: "Test".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: None, enabled: true };
             let mut spec = CliSpec::new(config, BackendOptions::default(), false, None);
             spec.targets = (0..count)
                 .map(|index| TargetContext {
@@ -2366,7 +2359,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     fn copilot_never_falls_back_to_native_or_ssh_execution() {
         for host in [None, Some("build-machine".to_string())] {
             let config =
-                BackendConfig { name: "Copilot".into(), kind: BackendKind::AgentCli, model: "copilot".into(), base_url: None, ssh_host: host, enabled: true };
+                BackendConfig { name: "Copilot".into(), kind: BackendKind::Nvidia, model: "copilot".into(), base_url: None, ssh_host: host, enabled: true };
             let options = BackendOptions { acp: Some(false), command: Some("no-such-copilot-xyz".into()), ..Default::default() };
             let spec = CliSpec::new(config, options, false, None);
             let (sender, receiver) = std::sync::mpsc::channel();
@@ -2398,7 +2391,7 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
         for guidance in [None, Some("Use test-agent sign-in.")] {
             let config = BackendConfig {
                 name: "Test agent".into(),
-                kind: BackendKind::AgentCli,
+                kind: BackendKind::Nvidia,
                 model: "test-acp-agent".into(),
                 base_url: None,
                 ssh_host: None,

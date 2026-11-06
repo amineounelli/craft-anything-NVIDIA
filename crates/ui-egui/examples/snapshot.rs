@@ -354,13 +354,13 @@ fn main() {
         a.asset_keys = Some([(craft_anything_engines::assets::fal::ID.to_string(), false)].into());
         let b = |name: &str, kind, model: &str| BackendConfig { name: name.into(), kind, model: model.into(), base_url: None, ssh_host: None, enabled: true };
         a.backends = vec![
-            b("Claude Code", BackendKind::AgentCli, "claude-code"),
-            b("Kimi K3.1 Pro (OpenRouter)", BackendKind::Openrouter, "moonshotai/kimi-k3.1-pro"),
-            b("Claude", BackendKind::Anthropic, "claude-opus-5-5"),
+            b("NVIDIA NIM API", BackendKind::Nvidia, "nvidia/nemotron-4-340b-instruct"),
+            b("Nemotron 70B (NVIDIA)", BackendKind::Nvidia, "nvidia/llama-3.1-nemotron-70b-instruct"),
+            b("Nemotron 340B (NVIDIA)", BackendKind::Nvidia, "nvidia/nemotron-4-340b-instruct"),
         ];
-        a.state.backend = Some("Claude".into());
-        a.builder = Some("Claude Code".into());
-        a.extractor = Some("Kimi K3.1 Pro (OpenRouter)".into());
+        a.state.backend = Some("Nemotron 340B (NVIDIA)".into());
+        a.builder = Some("NVIDIA NIM API".into());
+        a.extractor = Some("Nemotron 70B (NVIDIA)".into());
         if error {
             a.toast("Couldn't save C:/Users/me/AppData/Roaming/craft-anything/config.toml: access is denied.", true);
         }

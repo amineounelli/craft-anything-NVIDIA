@@ -228,7 +228,7 @@ mod tests {
     /// A hub whose Builder is an agent app, so queued runs pass the up-front check.
     fn hub() -> AiHub {
         let mut s = craft_anything_engine::testing::session();
-        s.settings.ai = toml::from_str("[[backends]]\nname = \"Agent\"\nkind = \"agent_cli\"\nmodel = \"claude-code\"\n").unwrap();
+        s.settings.ai = toml::from_str("[[backends]]\nname = \"Agent\"\nkind = \"nvidia\"\nmodel = \"nvidia/nemotron-4-340b-instruct\"\n").unwrap();
         assert!(builder_backend(&crate::AiConfig::from_settings(&s.settings), None).is_ok());
         AiHub::new(Arc::new(Engine::new(s)))
     }

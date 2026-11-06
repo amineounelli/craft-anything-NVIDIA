@@ -295,7 +295,7 @@ fn question_args(mut a: Vec<String>, cx: &ArgsCx) -> Vec<String> {
         "--append-system-prompt".into(),
         cx.preamble.to_string(),
         "--model".into(),
-        cx.options.cli_model.clone().unwrap_or_else(|| crate::anthropic::DEFAULT_MODEL.into()),
+        cx.options.cli_model.clone().unwrap_or_else(|| crate::openai::NVIDIA_DEFAULT_MODEL.into()),
     ]);
     if let Some(r) = cx.resume {
         a.extend(["--resume".into(), r.to_string(), "--fork-session".into()]);
@@ -354,11 +354,11 @@ impl AgentAdapter for ClaudeCode {
     }
 
     fn model_in_use(&self, options: Option<&BackendOptions>) -> Option<String> {
-        Some(options.and_then(|options| options.cli_model.clone()).unwrap_or_else(|| crate::anthropic::DEFAULT_MODEL.into()))
+        Some(options.and_then(|options| options.cli_model.clone()).unwrap_or_else(|| crate::openai::NVIDIA_DEFAULT_MODEL.into()))
     }
 
     fn model_choices(&self, _config: &BackendConfig, _options: &BackendOptions) -> Result<Vec<String>, ToolError> {
-        Ok(crate::anthropic::MODELS.iter().map(|model| model.to_string()).collect())
+        Ok(crate::openai::NVIDIA_MODELS.iter().map(|model| model.to_string()).collect())
     }
 
     fn args(&self, cx: &ArgsCx) -> Vec<String> {
@@ -370,7 +370,7 @@ impl AgentAdapter for ClaudeCode {
         a.extend(["-p".into(), "--output-format".into(), "stream-json".into(), "--verbose".into(), "--append-system-prompt".into(), cx.preamble.to_string()]);
         // Opus 5.5 everywhere unless config.toml names another model on purpose; the effort
         // goes in through the environment (see `run_cli`).
-        a.extend(["--model".into(), cx.options.cli_model.clone().unwrap_or_else(|| crate::anthropic::DEFAULT_MODEL.into())]);
+        a.extend(["--model".into(), cx.options.cli_model.clone().unwrap_or_else(|| crate::openai::NVIDIA_DEFAULT_MODEL.into())]);
         if let Some(r) = cx.resume {
             a.extend(["--resume".into(), r.to_string()]);
         }

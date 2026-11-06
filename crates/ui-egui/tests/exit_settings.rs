@@ -30,7 +30,7 @@ fn exit_save_preserves_latest_ai_and_pending_app_settings() {
     let engine = Arc::new(Engine::new(Session::isolated(&dir)));
     let hub = Arc::new(AiHub::with_stores(engine.clone(), Settings::path(), KeyStore::file_only(dir.join("keys.toml"))));
     let mut entry = BackendEntry {
-        config: BackendConfig { name: "OpenCode".into(), kind: BackendKind::AgentCli, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true },
+        config: BackendConfig { name: "OpenCode".into(), kind: BackendKind::Nvidia, model: "opencode".into(), base_url: None, ssh_host: None, enabled: true },
         options: BackendOptions { cli_model: Some("test/old".into()), cli_thinking: Some(Effort::Low), ..Default::default() },
     };
     hub.add_backend_with(entry.clone(), None).unwrap();

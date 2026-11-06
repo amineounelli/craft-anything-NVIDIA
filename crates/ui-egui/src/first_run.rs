@@ -95,11 +95,7 @@ fn header(ui: &mut Ui, title: &str, sub: &str) {
 
 fn brain(app: &mut CraftApp, ui: &mut Ui, width: f32) {
     let t = Tokens::get(ui.ctx());
-    header(
-        ui,
-        "Who builds what you make",
-        "A coding agent such as Claude Code builds it, and an AI answers your questions in plain words. Change this any time in Settings → AI.",
-    );
+    header(ui, "Who builds what you make", "An AI builds it, and answers your questions in plain words. Change this any time in Settings → AI.");
     // Whether something can build yet, in one line: the same rule Make and Start use.
     match app.default_builder() {
         Some(b) => {
@@ -111,10 +107,7 @@ fn brain(app: &mut CraftApp, ui: &mut Ui, width: f32) {
         None => {
             ui.horizontal_wrapped(|ui| {
                 icons::show(ui, "triangle-alert", 16.0, t.warning);
-                ui.label(
-                    RichText::new(tr("Nothing can build yet: install Claude Code (and sign in to it once), or add an AI with an API key below."))
-                        .color(t.text_dim),
-                );
+                ui.label(RichText::new(tr("Nothing can build yet: add an AI with an API key below.")).color(t.text_dim));
             });
         }
     }
@@ -149,7 +142,7 @@ fn brain(app: &mut CraftApp, ui: &mut Ui, width: f32) {
                     icons::show(ui, "radar", 22.0, t.text_faint);
                     ui.vertical(|ui| {
                         ui.label(RichText::new(tr("We didn't find an AI on this computer yet")).font(theme::medium(theme::BODY)));
-                        ui.label(RichText::new(tr("You can add a Claude, ChatGPT or OpenRouter key, a local model (Ollama, LM Studio) or an agent you already use, later in Settings → AI.")).color(t.text_dim));
+                        ui.label(RichText::new(tr("You can add a NVIDIA API key, or another AI with an API key, later in Settings → AI.")).color(t.text_dim));
                     });
                 });
             });
@@ -180,9 +173,7 @@ fn brain(app: &mut CraftApp, ui: &mut Ui, width: f32) {
 
 fn kind_icon(k: BackendKind) -> &'static str {
     match k {
-        BackendKind::Anthropic | BackendKind::Openai | BackendKind::Openrouter | BackendKind::Gemini | BackendKind::Nvidia => "key-round",
-        BackendKind::OpenaiCompatible => "server",
-        BackendKind::AgentCli => "terminal",
+        BackendKind::Nvidia => "key-round",
     }
 }
 
@@ -220,7 +211,7 @@ fn brain_card(app: &mut CraftApp, ui: &mut Ui, d: &Detected) {
         });
         // A subscription key is worth pasting even when the environment already has one, so a
         // different key can be used without restarting the app.
-        let pastable = d.needs_key || d.suggestion.base_url.as_deref().is_some_and(craft_anything_ai::openai::is_opencode_go);
+        let pastable = d.needs_key;
         if pastable && !configured {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -315,7 +306,7 @@ fn done(app: &mut CraftApp, ui: &mut Ui) {
     let brain = app.state.backend.clone().unwrap_or_else(|| tr("the built-in engines"));
     let builds = match app.default_builder() {
         Some(b) => crate::i18n::trf("{name} builds what you make; answers come from {brain}.", &[("name", &b), ("brain", &brain)]),
-        None => crate::i18n::trf("Answers come from {brain}. To build, set up a coding agent in Settings → AI.", &[("brain", &brain)]),
+        None => crate::i18n::trf("Answers come from {brain}. To build, set up an AI in Settings → AI.", &[("brain", &brain)]),
     };
     ui.label(RichText::new(builds).size(theme::BODY).color(t.text_dim));
     ui.add_space(8.0);

@@ -66,14 +66,12 @@ mod tests {
         Detected { suggestion, reason: String::new(), needs_key: false }
     }
 
-    /// An agent app is a harness; an API backend and a local server are providers.
+    /// All backends are NVIDIA API providers; none are agent apps.
     #[test]
-    fn the_two_kinds_land_on_their_own_tab() {
-        assert_eq!(tab_of(&detected(BackendKind::AgentCli)), DetectTab::Harnesses);
-        assert_eq!(tab_of(&detected(BackendKind::Openai)), DetectTab::Providers);
-        assert_eq!(tab_of(&detected(BackendKind::OpenaiCompatible)), DetectTab::Providers);
-        let all = [detected(BackendKind::AgentCli), detected(BackendKind::Anthropic), detected(BackendKind::Gemini)];
-        assert_eq!(counts(&all), (2, 1));
+    fn all_backends_are_providers() {
+        assert_eq!(tab_of(&detected(BackendKind::Nvidia)), DetectTab::Providers);
+        let all = [detected(BackendKind::Nvidia), detected(BackendKind::Nvidia)];
+        assert_eq!(counts(&all), (2, 0));
     }
 
     /// The first choice prefers the tab with something; a click is always honoured, so an empty tab

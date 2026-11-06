@@ -29,12 +29,12 @@ pub struct ChatArgs {
 pub enum AiCommand {
     /// Configured backends.
     List,
-    /// Look for keys, local servers, agent CLIs and SSH hosts.
+    /// Look for API keys, reachable model servers and SSH hosts.
     Detect,
     /// Add a backend.
     Add {
         name: String,
-        /// anthropic, openai, openrouter, nvidia, openai_compatible, agent_cli
+        /// nvidia
         #[arg(long)]
         kind: String,
         #[arg(long)]
@@ -59,31 +59,20 @@ pub enum AiCommand {
     /// Set the program an agent app runs, when it's installed where it isn't found (leave the
     /// path out to find it by its usual name again).
     Program { name: String, path: Option<String> },
-    /// Set the folder Claude Code keeps its sign-in, settings and sessions in (its
-    /// CLAUDE_CONFIG_DIR), so this AI uses another account: a full path or one under `~/`, on the
-    /// computer it runs on. Leave the path out for its usual folder.
+    /// Set the folder an agent app keeps its sign-in, settings and sessions in; leave the path out
+    /// for its usual folder. Not used with NVIDIA NIM backends.
     Folder { name: String, path: Option<String> },
-    /// Set the model an AI uses (Claude Code: the model it's asked for); leave it out to list the
-    /// ones it can use.
-    Model {
-        name: String,
-        model: Option<String>,
-        /// OpenCode thinking variant; only those offered by the selected model are accepted.
-        #[arg(long, value_parser = ["low", "medium", "high", "xhigh", "max"])]
-        thinking: Option<String>,
-        /// Use OpenCode's default model and thinking depth.
-        #[arg(long, conflicts_with_all = ["model", "thinking"])]
-        default: bool,
-    },
-    /// Set how hard a Claude backend thinks (the Claude API or Claude Code): low, medium, high,
-    /// xhigh or max, or `default` for the usual level; leave it out to see the level and choices.
+    /// Set the model an AI uses; leave it out to list the ones it can use.
+    Model { name: String, model: Option<String> },
+    /// Set how hard a backend thinks: low, medium, high, xhigh or max, or `default` for the usual
+    /// level; leave it out to see the level and choices. NVIDIA NIM backends do not use effort.
     Effort { name: String, level: Option<String> },
     /// Send a tiny request and report latency.
     Test { name: String },
     /// Choose the backend that builds (leave the name out to go back to automatic).
     Builder { name: Option<String> },
-    /// Choose the backend that takes a game's own files out after the study, in Deep mode (an API
-    /// backend such as Kimi K3 through OpenRouter; leave the name out to turn it off).
+    /// Choose the backend that takes a game's own files out after the study, in Deep mode (leave the
+    /// name out to turn it off).
     Extractor { name: Option<String> },
 }
 
@@ -225,31 +214,17 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
         }
         AiCommand::Detect => {
             emit(&serde_json::to_value(hub.detect()).unwrap_or(Value::Null), f);
-            // On stderr, so the list on stdout stays what scripts read.
-            for hint in hub.detect_hints() {
-                eprintln!("note: {} {}", hint.message(), hint.remediation());
-            }
             0
         }
         AiCommand::Add { name, kind, model, base_url, ssh_host, key_env, key_stdin } => {
             let kind: BackendKind = match serde_json::from_value(json!(kind)) {
                 Ok(k) => k,
-                Err(_) => return crate::usage_error("--kind must be one of anthropic, openai, openrouter, nvidia, openai_compatible, agent_cli"),
+                Err(_) => return crate::usage_error("--kind must be nvidia"),
             };
             let key = match read_key(key_env, *key_stdin) {
                 Ok(k) => k,
                 Err(m) => return crate::usage_error(&m),
             };
-            // A server by its address with no model named: asked for its models, and one that can chat is used.
-            if let (BackendKind::OpenaiCompatible, Some(address), None) = (kind, base_url, model) {
-                return match hub.add_server(name, address, None, key) {
-                    Ok(model) => {
-                        emit(&json!({"added": {"name": name, "kind": kind, "model": model, "base_url": address}}), f);
-                        0
-                    }
-                    Err(e) => fail(&e, f),
-                };
-            }
             let model = model.clone().or_else(|| kind.suggested_models().first().map(|m| m.to_string())).unwrap_or_default();
             let cfg = BackendConfig { name: name.clone(), kind, model, base_url: base_url.clone(), ssh_host: ssh_host.clone(), enabled: true };
             match hub.add_backend(cfg.clone(), key) {
@@ -273,30 +248,6 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
                 Ok(found) => {
                     emit(&json!({"name": name, "enabled": on, "found": found}), f);
                     if found { 0 } else { 1 }
-                }
-                Err(e) => fail(&e, f),
-            }
-        }
-        AiCommand::Model { name, model, thinking, default } if *default || thinking.is_some() => {
-            let depth = thinking.as_deref().and_then(craft_anything_ai::Effort::parse);
-            let model = if *default { None } else { model.clone().or_else(|| hub.options().get(name).and_then(|o| o.cli_model.clone())) };
-            match hub.set_agent_model(name, model.as_deref(), depth) {
-                Ok(found) => {
-                    emit(&json!({"name": name, "model": model, "thinking": depth, "found": found}), f);
-                    if found { 0 } else { 1 }
-                }
-                Err(e) => fail(&e, f),
-            }
-        }
-        AiCommand::Model { name, model: None, .. }
-            if hub.model_context(name).is_ok_and(|c| {
-                c.backend.config.kind == BackendKind::AgentCli && craft_anything_ai::cli_agents::adapter_for(&c.backend.config.model).has_model_catalog()
-            }) =>
-        {
-            match hub.model_context(name).and_then(|c| hub.agent_models(&c)) {
-                Ok(models) => {
-                    emit(&json!({"name": name, "models": models}), f);
-                    0
                 }
                 Err(e) => fail(&e, f),
             }
@@ -327,7 +278,8 @@ pub fn ai(cli: &Cli, c: &AiCommand, f: Format) -> u8 {
                     0
                 }
                 None => fail(
-                    &ToolError::invalid(format!("{name} doesn't take an effort level.")).with_remediation("Effort is for the Claude API and Claude Code."),
+                    &ToolError::invalid(format!("{name} doesn't take an effort level."))
+                        .with_remediation("Effort levels are for Claude-style backends; NVIDIA NIM models do not use them."),
                     f,
                 ),
             }

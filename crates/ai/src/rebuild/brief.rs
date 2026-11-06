@@ -304,6 +304,7 @@ pub(super) fn continue_prompt(kind: &dyn TargetKind) -> String {
 /// one, or moved): the whole brief, then what was made so far and where to find it, and the
 /// earlier conversation as the project kept it (`handoff`), else its last summary, so it carries
 /// on from the project rather than starting over.
+#[allow(dead_code)]
 pub(super) fn resumed_elsewhere(brief: &str, last_reply: &str, handoff: Option<&str>) -> String {
     let mut s = format!(
         "{brief}\n\nThis project is already under way: an earlier conversation built it, but that conversation isn't on this computer (the project was started on another computer or in another folder). Everything made so far is in app/. Before changing anything, look through app/ and the open questions (core_unknowns_show) to see what's done, then carry on from there instead of starting again."

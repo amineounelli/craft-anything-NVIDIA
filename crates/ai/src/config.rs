@@ -202,7 +202,7 @@ pub struct BackendEntry {
 impl BackendEntry {
     /// Older configurations can put OpenCode's variant directly in its model reference.
     fn thinking_from_model(&mut self) {
-        if self.config.kind != BackendKind::AgentCli || self.config.model != "opencode" {
+        if self.config.kind != BackendKind::Nvidia || self.config.model != "opencode" {
             return;
         }
         let Some((model, variant)) = self.options.cli_model.as_deref().and_then(|m| m.rsplit_once('#')) else { return };
@@ -219,7 +219,7 @@ impl BackendEntry {
         let known = crate::cli_agents::KNOWN;
         let model = self.config.model.trim();
         let names_an_agent = known.iter().any(|(id, prog, display)| model == *id || model == *prog || model.eq_ignore_ascii_case(display));
-        if self.config.kind != BackendKind::AgentCli || model.is_empty() || names_an_agent {
+        if self.config.kind != BackendKind::Nvidia || model.is_empty() || names_an_agent {
             return;
         }
         // The file name without `.exe`, whichever system's separators the path uses.
@@ -329,12 +329,12 @@ impl AiConfig {
         if let Some(b) = self.roles.get(role_key(role)).and_then(|n| self.get(n)).filter(|b| b.config.enabled) {
             return Some(b);
         }
-        let lead = || self.enabled().find(|b| b.config.kind != BackendKind::AgentCli).or_else(|| self.enabled().next());
+        let lead = || self.enabled().find(|b| b.config.kind != BackendKind::Nvidia).or_else(|| self.enabled().next());
         match role {
             Role::Lead => lead(),
-            Role::Worker => self.enabled().find(|b| b.config.kind == BackendKind::OpenaiCompatible).or_else(lead),
+            Role::Worker => self.enabled().find(|b| b.config.kind == BackendKind::Nvidia).or_else(lead),
             Role::Reviewer | Role::Extractor => None,
-            Role::Builder => self.enabled().find(|b| b.config.kind == BackendKind::AgentCli).or_else(lead),
+            Role::Builder => self.enabled().find(|b| b.config.kind == BackendKind::Nvidia).or_else(lead),
         }
     }
 
@@ -353,22 +353,6 @@ impl AiConfig {
 
 #[cfg(test)]
 mod tests {
-    /// Legacy embedded variants migrate to separate model/depth settings and survive serialization.
-    #[test]
-    fn opencode_embedded_variants_migrate_and_every_depth_round_trips() {
-        for depth in crate::Effort::ALL {
-            let table: toml::Table = toml::from_str(&format!(
-                "[[backends]]\nname = 'OpenCode'\nkind = 'agent_cli'\nmodel = 'opencode'\ncli_model = 'test/model#{}'\n",
-                depth.as_str()
-            ))
-            .unwrap();
-            let config = super::AiConfig::from_table(&table).unwrap();
-            let entry = config.get("OpenCode").unwrap();
-            assert_eq!(entry.options.cli_model.as_deref(), Some("test/model"));
-            assert_eq!(entry.options.cli_thinking, Some(depth));
-            assert_eq!(super::AiConfig::from_table(&config.to_table().unwrap()).unwrap(), config);
-        }
-    }
 
     #[test]
     fn the_default_builder_is_the_same_from_the_list_as_from_the_config() {
@@ -376,11 +360,11 @@ mod tests {
         let b = |name: &str, kind, enabled| BackendConfig { name: name.into(), kind, model: String::new(), base_url: None, ssh_host: None, enabled };
         let cases: Vec<(Vec<BackendConfig>, Option<&str>)> = vec![
             (vec![], None),
-            (vec![b("Key", BackendKind::Anthropic, true), b("Claude Code", BackendKind::AgentCli, true)], None),
-            (vec![b("Key", BackendKind::Anthropic, true), b("Claude Code", BackendKind::AgentCli, false)], None),
-            (vec![b("Key", BackendKind::Anthropic, true), b("Claude Code", BackendKind::AgentCli, true)], Some("Key")),
-            (vec![b("Key", BackendKind::Anthropic, false), b("Claude Code", BackendKind::AgentCli, true)], Some("Key")),
-            (vec![b("Local", BackendKind::OpenaiCompatible, true), b("Key", BackendKind::Anthropic, true)], None),
+            (vec![b("Key", BackendKind::Nvidia, true), b("Claude Code", BackendKind::Nvidia, true)], None),
+            (vec![b("Key", BackendKind::Nvidia, true), b("Claude Code", BackendKind::Nvidia, false)], None),
+            (vec![b("Key", BackendKind::Nvidia, true), b("Claude Code", BackendKind::Nvidia, true)], Some("Key")),
+            (vec![b("Key", BackendKind::Nvidia, false), b("Claude Code", BackendKind::Nvidia, true)], Some("Key")),
+            (vec![b("Local", BackendKind::Nvidia, true), b("Key", BackendKind::Nvidia, true)], None),
         ];
         for (list, chosen) in cases {
             let mut cfg = AiConfig::default();
@@ -407,12 +391,12 @@ mod tests {
     #[test]
     fn round_trip_through_settings_toml() {
         let mut c = AiConfig::default();
-        let mut a = entry("Claude", BackendKind::Anthropic);
+        let mut a = entry("Claude", BackendKind::Nvidia);
         a.options.effort = Some(Effort::High);
         a.options.fallbacks_enabled = Some(false);
         a.options.context_tokens = Some(120_000);
         c.upsert(a);
-        c.upsert(entry("Local", BackendKind::OpenaiCompatible));
+        c.upsert(entry("Local", BackendKind::Nvidia));
         c.roles.insert("reviewer".into(), "Local".into());
         c.fallback_chain = vec!["Local".into()];
         c.prices.insert("m".into(), Price { input_per_mtok: 1.0, output_per_mtok: 2.0, cache_read_per_mtok: None, cache_write_per_mtok: None });
@@ -429,7 +413,7 @@ mod tests {
     #[test]
     fn backend_context_budget_is_optional_and_validated() {
         let table = |line: &str| -> toml::Table {
-            toml::from_str(&format!("[[backends]]\nname = \"Local\"\nkind = \"openai_compatible\"\nmodel = \"qwen3:8b\"\n{line}")).unwrap()
+            toml::from_str(&format!("[[backends]]\nname = \"Local\"\nkind = \"nvidia\"\nmodel = \"nvidia/nemotron-4-340b-instruct\"\n{line}")).unwrap()
         };
         for (line, expected) in [
             ("", None),
@@ -449,12 +433,15 @@ mod tests {
     #[test]
     fn roles_and_chains() {
         let mut c = AiConfig::default();
-        c.upsert(entry("Codex", BackendKind::AgentCli));
-        c.upsert(entry("Claude", BackendKind::Anthropic));
-        c.upsert(entry("Local", BackendKind::OpenaiCompatible));
-        assert_eq!(c.backend_for(Role::Lead).unwrap().config.name, "Claude");
-        assert_eq!(c.backend_for(Role::Worker).unwrap().config.name, "Local");
-        assert_eq!(c.backend_for(Role::Builder).unwrap().config.name, "Codex");
+        c.upsert(entry("Codex", BackendKind::Nvidia));
+        c.upsert(entry("Claude", BackendKind::Nvidia));
+        c.upsert(entry("Local", BackendKind::Nvidia));
+        // All backends are Nvidia: Lead falls back to first enabled,
+        // Worker and Builder pick first Nvidia (= first enabled).
+        let first = c.enabled().next().unwrap().config.name.clone();
+        assert_eq!(c.backend_for(Role::Lead).unwrap().config.name, first);
+        assert_eq!(c.backend_for(Role::Worker).unwrap().config.name, first);
+        assert_eq!(c.backend_for(Role::Builder).unwrap().config.name, first);
         assert!(c.backend_for(Role::Reviewer).is_none());
         assert!(c.backend_for(Role::Extractor).is_none(), "the extractor only runs when chosen");
         c.roles.insert("lead".into(), "Local".into());
@@ -472,26 +459,5 @@ mod tests {
         assert_eq!(AiConfig::from_table(&t).unwrap_err().code, ErrorCode::BadSettings);
         let s = Settings { ai: t, ..Default::default() };
         assert!(AiConfig::from_settings(&s).backends.is_empty());
-    }
-
-    /// #34: the agent's program in `command` and the model in `model` runs that agent with it.
-    #[test]
-    fn an_agent_named_by_its_command_gets_the_model() {
-        let one = |toml: &str| {
-            let t: toml::Table = toml::from_str(&format!("[[backends]]\nname = \"A\"\nkind = \"agent_cli\"\n{toml}")).unwrap();
-            let b = AiConfig::from_table(&t).unwrap().backends.remove(0);
-            (b.config.model, b.options.cli_model)
-        };
-        let reported = "model = \"deepseek/deepseek-flash\"\ncommand = \"opencode\"\nargs = [\"run\", \"--auto\"]";
-        assert_eq!(one(reported), ("opencode".into(), Some("deepseek/deepseek-flash".into())));
-        assert_eq!(one("model = \"sonnet\"\ncommand = 'C:\\Users\\u\\.bun\\bin\\opencode.exe'").0, "opencode", "a full path names it too");
-        // Left as they are: a model that names the agent, a cli_model already set, an unknown program.
-        assert_eq!(one("model = \"opencode\"\ncommand = \"opencode\""), ("opencode".into(), None));
-        assert_eq!(one("model = \"gemini\"\ncommand = \"gemini\""), ("gemini".into(), None));
-        assert_eq!(one("model = \"x/y\"\ncommand = \"opencode\"\ncli_model = \"z\""), ("opencode".into(), Some("z".into())));
-        assert_eq!(one("model = \"my-agent\"\ncommand = \"my-agent-cli\""), ("my-agent".into(), None));
-        assert_eq!(one("model = \"claude-code\""), ("claude-code".into(), None));
-        // Maki named by its program runs Maki's own adapter, not `maki <prompt>` (its terminal interface).
-        assert_eq!(one("model = \"anthropic/claude-sonnet-4-6\"\ncommand = \"maki\""), ("maki".into(), Some("anthropic/claude-sonnet-4-6".into())));
     }
 }

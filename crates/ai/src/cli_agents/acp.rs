@@ -1175,14 +1175,8 @@ printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$prompt
     /// `maki -m <model> acp` starts with Maki's default model: the flag only counts after `acp`.
     #[test]
     fn a_maki_backend_runs_acp_then_its_model_after_its_own_args() {
-        let config = crate::BackendConfig {
-            name: "Maki".into(),
-            kind: crate::BackendKind::AgentCli,
-            model: "maki".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
+        let config =
+            crate::BackendConfig { name: "Maki".into(), kind: crate::BackendKind::Nvidia, model: "maki".into(), base_url: None, ssh_host: None, enabled: true };
         let options = crate::BackendOptions {
             acp: Some(true),
             cli_model: Some("anthropic/claude-sonnet-4-6".into()),

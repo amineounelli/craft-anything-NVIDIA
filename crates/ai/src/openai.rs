@@ -8,29 +8,6 @@ use craft_anything_evidence::{ErrorCode, ToolError};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-pub const OPENAI_BASE: &str = "https://api.openai.com/v1";
-pub const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
-/// Gemini's OpenAI-compatible endpoint, for a Google AI Studio key.
-pub const GEMINI_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
-pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5";
-pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-opus-5-5";
-/// Kimi K3.1 Pro (Moonshot AI) on OpenRouter: 1M-token context, tool calls.
-pub const KIMI_K3_1: &str = "moonshotai/kimi-k3.1-pro";
-/// OpenRouter models offered when adding it.
-pub const OPENROUTER_MODELS: &[&str] = &[OPENROUTER_DEFAULT_MODEL, KIMI_K3_1];
-/// Gemini models offered when adding a Google AI Studio key; the live list comes from the key.
-pub const GEMINI_DEFAULT_MODEL: &str = "gemini-3.8-flash";
-pub const GEMINI_MODELS: &[&str] = &[GEMINI_DEFAULT_MODEL, "gemini-4-argon"];
-/// Generic app identification for OpenRouter (no personal data).
-pub const APP_REFERER: &str = "https://github.com/storytold/craft-anything";
-pub const APP_TITLE: &str = "Craft Anything";
-/// OpenCode Go (a subscription): an OpenAI-compatible base, the key from its console, and a session
-/// header the service asks every client to send so routing and prompt caching follow a conversation.
-pub const OPENCODE_GO_BASE: &str = "https://opencode.ai/inference/go/openai/v1";
-/// The header OpenCode Go asks every client to send.
-pub const OPENCODE_GO_SESSION_HEADER: &str = "x-opencode-session";
-/// The model a new OpenCode Go backend starts on, before its own list is fetched.
-pub const OPENCODE_GO_DEFAULT_MODEL: &str = "kimi-k3.1-pro";
 /// NVIDIA NIM API: OpenAI-compatible, keyed with NVIDIA_API_KEY.
 pub const NVIDIA_BASE: &str = "https://integrate.api.nvidia.com/v1";
 /// The model a new NVIDIA backend starts on, before NIM's own list is fetched.
@@ -46,27 +23,6 @@ pub const NVIDIA_MODELS: &[&str] = &[
     "nvidia/nemotron-3.5-super-vl-120b-a12b",
 ];
 
-/// Whether this base URL is OpenCode Go's: https, host opencode.ai, path under /inference/go/.
-/// A substring test would also match a look-alike host or a proxy path.
-pub fn is_opencode_go(base: &str) -> bool {
-    let base = base.trim().trim_end_matches('/');
-    let Some((scheme, rest)) = base.split_once("://") else { return false };
-    if !scheme.eq_ignore_ascii_case("https") {
-        return false;
-    }
-    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
-    let host = host.rsplit('@').next().unwrap_or(host).split(':').next().unwrap_or(host);
-    host.eq_ignore_ascii_case("opencode.ai") && (path == "inference/go" || path.starts_with("inference/go/"))
-}
-
-/// Well-known local servers: (name, base URL).
-pub const LOCAL_SERVERS: &[(&str, &str)] = &[
-    ("Ollama", "http://127.0.0.1:11434/v1"),
-    ("LM Studio", "http://127.0.0.1:1234/v1"),
-    ("llama.cpp server", "http://127.0.0.1:8080/v1"),
-    ("vLLM", "http://127.0.0.1:8000/v1"),
-];
-
 #[derive(Debug, Clone)]
 pub struct OpenAi {
     /// For messages ("OpenAI", "OpenRouter", "Ollama"…).
@@ -79,27 +35,9 @@ pub struct OpenAi {
     pub react: bool,
     /// Recover JSON text calls automatically, and switch to ReAct when the server rejects tools.
     pub auto_react: bool,
-    /// Talking to OpenRouter, which routes each request to one of several upstream providers.
-    pub openrouter: bool,
 }
 
 impl OpenAi {
-    pub fn official(base: Option<&str>, key: String, model: &str) -> Self {
-        Self::compatible("OpenAI", base.unwrap_or(OPENAI_BASE), Some(key), if model.is_empty() { OPENAI_DEFAULT_MODEL } else { model })
-    }
-
-    pub fn openrouter(base: Option<&str>, key: String, model: &str) -> Self {
-        let mut o = Self::compatible("OpenRouter", base.unwrap_or(OPENROUTER_BASE), Some(key), if model.is_empty() { OPENROUTER_DEFAULT_MODEL } else { model });
-        o.extra_headers = vec![("HTTP-Referer", APP_REFERER.to_string()), ("X-Title", APP_TITLE.to_string())];
-        o.openrouter = true;
-        o
-    }
-
-    /// A Google AI Studio (Gemini API) key, through Gemini's OpenAI-compatible endpoint.
-    pub fn gemini(base: Option<&str>, key: String, model: &str) -> Self {
-        Self::compatible("Gemini", base.unwrap_or(GEMINI_BASE), Some(key), if model.is_empty() { GEMINI_DEFAULT_MODEL } else { model })
-    }
-
     /// An NVIDIA NIM API key, through NVIDIA's OpenAI-compatible endpoint at integrate.api.nvidia.com.
     pub fn nvidia(base: Option<&str>, key: String, model: &str) -> Self {
         Self::compatible("NVIDIA", base.unwrap_or(NVIDIA_BASE), Some(key), if model.is_empty() { NVIDIA_DEFAULT_MODEL } else { model })
@@ -114,7 +52,6 @@ impl OpenAi {
             extra_headers: Vec::new(),
             react: false,
             auto_react: true,
-            openrouter: false,
         }
     }
 
@@ -156,12 +93,6 @@ impl OpenAi {
                 .collect();
             o.insert("tools".into(), Value::Array(tools));
             o.insert("tool_choice".into(), json!("auto"));
-            // OpenRouter picks an upstream provider per request, and one that can't do tool calls
-            // answers "400: Provider returned error" (#369). Only a provider that supports every
-            // parameter in the request is used.
-            if self.openrouter {
-                o.insert("provider".into(), json!({"require_parameters": true}));
-            }
         }
         body
     }
@@ -214,7 +145,7 @@ fn rejects_tools(e: &ToolError) -> bool {
 impl ChatModel for OpenAi {
     fn turn(&mut self, req: &TurnRequest<'_>, on_delta: &mut dyn FnMut(Delta), stop: &Stop) -> Result<TurnResult, ToolError> {
         match self.stream_once(req, on_delta, stop) {
-            Err(e) if !self.react && self.auto_react && !req.tools.is_empty() && (rejects_tools(&e) || self.no_provider_for_tools(&e)) => {
+            Err(e) if !self.react && self.auto_react && !req.tools.is_empty() && rejects_tools(&e) => {
                 log::info!("{} rejected tool calling; switching to the text protocol", self.label);
                 self.react = true;
                 self.stream_once(req, on_delta, stop)
@@ -225,14 +156,6 @@ impl ChatModel for OpenAi {
 
     fn model(&self) -> String {
         self.model.clone()
-    }
-}
-
-impl OpenAi {
-    /// OpenRouter answers 404 when no provider supports all the request's parameters (see
-    /// [`OpenAi::body`]): tool calling isn't available for this model, so the text protocol is.
-    fn no_provider_for_tools(&self, e: &ToolError) -> bool {
-        self.openrouter && e.details.as_ref().and_then(|d| d.get("status")).and_then(Value::as_u64) == Some(404)
     }
 }
 
@@ -376,8 +299,7 @@ impl ChatStream {
         }
         let has_calls = !self.calls.is_empty();
         for (i, (_, c)) in self.calls.into_iter().enumerate() {
-            let input =
-                if c.args.trim().is_empty() { json!({}) } else { serde_json::from_str(&c.args).unwrap_or_else(|_| crate::anthropic::invalid_input(&c.args)) };
+            let input = if c.args.trim().is_empty() { json!({}) } else { serde_json::from_str(&c.args).unwrap_or(json!({})) };
             let id = if c.id.is_empty() { format!("call_{i}") } else { c.id };
             blocks.push(Block::ToolUse { id, name: c.name, input });
         }
@@ -684,20 +606,6 @@ mod tests {
         }
     }
 
-    /// Only the real OpenCode Go base gets its session header: not a look-alike host, path or scheme.
-    #[test]
-    fn opencode_go_base_is_recognised_exactly() {
-        assert!(is_opencode_go(OPENCODE_GO_BASE));
-        assert!(is_opencode_go("https://opencode.ai/inference/go/openai/v1/models"));
-        assert!(is_opencode_go("https://OpenCode.AI/inference/go/openai/v1"));
-        assert!(!is_opencode_go("https://opencode.ai.evil.test/inference/go/v1"));
-        assert!(!is_opencode_go("http://127.0.0.1:4000/opencode.ai/inference/go/v1"));
-        assert!(!is_opencode_go("https://opencode.ai/inference/gopher/v1"));
-        assert!(!is_opencode_go("https://opencode.ai/inference/go-v2/v1"));
-        assert!(!is_opencode_go("http://opencode.ai/inference/go/v1"));
-        assert!(!is_opencode_go("https://openrouter.ai/api/v1"));
-    }
-
     #[test]
     fn json_text_calls_and_non_calls() {
         for text in [
@@ -852,42 +760,12 @@ mod tests {
         }
     }
 
-    /// #369: OpenRouter routes to an upstream provider per request, and one without tool calling
-    /// answered "400: Provider returned error". With tools in the request, only providers that
-    /// support every parameter are used; nothing else changes.
-    #[test]
-    fn gemini_uses_the_google_endpoint_with_a_bearer_key() {
-        let g = OpenAi::gemini(None, "k".into(), "");
-        assert_eq!(g.url("chat/completions"), format!("{GEMINI_BASE}/chat/completions"));
-        assert_eq!(g.model, GEMINI_DEFAULT_MODEL);
-        assert!(g.headers().contains(&("authorization", "Bearer k".to_string())));
-        assert!(!g.openrouter);
-    }
-
-    #[test]
-    fn openrouter_only_routes_a_tool_request_to_providers_that_support_tools() {
-        use crate::model::{Effort, ToolDef, TurnRequest};
-        let tools = [ToolDef { name: "look".into(), description: "d".into(), schema: json!({"type": "object"}) }];
-        let messages = [Msg::user_text("hi")];
-        let with_tools = TurnRequest { system: "S", messages: &messages, tools: &tools, effort: Effort::Low, max_tokens: 100 };
-        let without = TurnRequest { system: "S", messages: &messages, tools: &[], effort: Effort::Low, max_tokens: 100 };
-        let router = OpenAi::openrouter(None, "k".into(), "moonshotai/kimi-k3");
-        assert_eq!(router.body(&with_tools)["provider"], json!({"require_parameters": true}));
-        assert!(router.body(&without).get("provider").is_none(), "nothing to require without tools");
-        let mut text_protocol = router.clone();
-        text_protocol.react = true;
-        assert!(text_protocol.body(&with_tools).get("provider").is_none(), "the text protocol sends no tools");
-        let other = OpenAi::compatible("Ollama", "http://127.0.0.1:11434/v1", None, "llama3");
-        assert!(other.body(&with_tools).get("provider").is_none(), "only OpenRouter knows `provider`");
-        assert_eq!(router.body(&with_tools)["tool_choice"], "auto");
-    }
-
     #[test]
     fn wire_messages() {
-        let o = OpenAi::openrouter(None, "k".into(), "");
-        assert!(o.headers().iter().any(|(k, _)| *k == "X-Title"));
+        let o = OpenAi::nvidia(None, "k".into(), "");
+        assert_eq!(o.label, "NVIDIA");
         assert!(o.headers().iter().any(|(k, v)| *k == "authorization" && v == "Bearer k"));
-        let local = OpenAi::compatible("Ollama", "http://127.0.0.1:11434/v1/", None, "llama3");
+        let local = OpenAi::compatible("NVIDIA", "http://127.0.0.1:11434/v1/", None, "llama3");
         assert!(local.headers().is_empty());
         assert_eq!(local.url("models"), "http://127.0.0.1:11434/v1/models");
         let assistant = Msg { role: Speaker::Assistant, blocks: vec![Block::ToolUse { id: "c1".into(), name: "t".into(), input: json!({"a":1}) }] };

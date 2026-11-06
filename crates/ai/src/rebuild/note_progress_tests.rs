@@ -1,4 +1,5 @@
 use super::*;
+use crate::BackendKind;
 use craft_anything_engine::workspace::progress::BUILD_PROGRESS_FILE;
 
 fn consumed_notes(notes: &Mutex<Vec<Note>>, dir: &Path) {
@@ -126,7 +127,7 @@ fn consumed_note_progress_errors_preserve_the_completed_turn() {
         let entry = crate::BackendEntry {
             config: crate::BackendConfig {
                 name: "Scripted".into(),
-                kind: BackendKind::OpenaiCompatible,
+                kind: BackendKind::Nvidia,
                 model: "scripted".into(),
                 base_url: None,
                 ssh_host: None,
@@ -218,7 +219,7 @@ fn consumed_note_resets_survive_failed_and_cancelled_turns() {
                 let entry = crate::BackendEntry {
                     config: crate::BackendConfig {
                         name: "Scripted".into(),
-                        kind: BackendKind::OpenaiCompatible,
+                        kind: BackendKind::Nvidia,
                         model: "scripted".into(),
                         base_url: None,
                         ssh_host: None,

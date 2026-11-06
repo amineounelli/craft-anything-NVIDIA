@@ -154,8 +154,8 @@ pub enum Done {
         path: PathBuf,
         result: Result<Value, ToolError>,
     },
-    /// What a scan found, and why an expected coding agent may be missing.
-    Detected(Vec<Detected>, Vec<craft_anything_ai::detect::DetectHint>),
+    /// What a scan found.
+    Detected(Vec<Detected>),
     /// The configured backends, the ones chosen to build with and to extract with, and each one's
     /// options.
     Backends(Vec<BackendConfig>, Option<String>, Option<String>, std::collections::BTreeMap<String, craft_anything_ai::BackendOptions>),
@@ -449,8 +449,6 @@ pub struct CraftApp {
     /// The backend chosen to take a game's files out in Deep mode, if any.
     pub extractor: Option<String>,
     pub detected: Option<Vec<Detected>>,
-    /// Why an expected coding agent may be missing, from the last scan.
-    pub detect_hints: Vec<craft_anything_ai::detect::DetectHint>,
     pub detecting: bool,
     /// Counts AI choices, so an add that finishes later doesn't undo one made meanwhile.
     pub backend_choices: u64,
@@ -569,7 +567,6 @@ impl CraftApp {
             builder: None,
             extractor: None,
             detected: None,
-            detect_hints: Vec::new(),
             detecting: false,
             backend_choices: 0,
             log: Vec::new(),
@@ -1203,7 +1200,7 @@ impl CraftApp {
         }
         self.detecting = true;
         let hub = self.hub.clone();
-        self.jobs.spawn("Look for AI on this computer", true, move |_| Ok(Done::Detected(hub.detect(), hub.detect_hints())));
+        self.jobs.spawn("Look for AI on this computer", true, move |_| Ok(Done::Detected(hub.detect())));
     }
 
     pub fn add_backend(&mut self, config: BackendConfig, key: Option<String>) {
@@ -1454,8 +1451,7 @@ impl CraftApp {
                     self.toast(e.for_people(), true);
                 }
             },
-            Done::Detected(d, hints) => {
-                self.detect_hints = hints;
+            Done::Detected(d) => {
                 self.detecting = false;
                 self.log(false, format!("Found {} AI option(s) on this computer", d.len()));
                 self.detected = Some(d);
@@ -1513,9 +1509,7 @@ impl CraftApp {
             Done::ModelChanged { name, model, result } => match result {
                 Ok(options) => {
                     if let Some(backend) = self.backends.iter_mut().find(|backend| backend.name == name) {
-                        if backend.kind != craft_anything_ai::BackendKind::AgentCli {
-                            backend.model = model;
-                        }
+                        backend.model = model;
                         self.backend_options.insert(name.clone(), options);
                     }
                     self.model_tuning.remove(&name);

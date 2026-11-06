@@ -3,7 +3,15 @@
 //! Everything here runs on a background worker thread owned by [`ApiConversation`]; the UI only
 //! ever calls the non-blocking [`Conversation`] methods.
 
-use crate::anthropic::INVALID_INPUT_KEY;
+/// Marker for tool input that wasn't valid JSON.
+const INVALID_INPUT_KEY: &str = "__invalid_json_input";
+/// Most tokens a single turn may request.
+const MAX_TOKENS: u32 = 64_000;
+/// Sort tool definitions by name so the cached prefix stays identical between requests.
+fn sort_tools(mut tools: Vec<ToolDef>) -> Vec<ToolDef> {
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+    tools
+}
 use crate::context;
 use crate::model::{Block, ChatModel, Delta, Effort, Msg, Speaker, Stop, StopReason, ToolDef, TurnRequest, Usage};
 use crate::price::{self, Meter};
@@ -336,7 +344,7 @@ impl AgentLoop {
             description: "Enable a toolset so its tools become available from the next step on. Use list_toolsets to see the ids.".into(),
             schema: json!({"type": "object", "properties": {"toolset": {"type": "string", "enum": self.host.toolsets().iter().map(|t| t.id()).collect::<Vec<_>>()}}, "required": ["toolset"]}),
         });
-        crate::anthropic::sorted(tools)
+        sort_tools(tools)
     }
 
     /// Handle one user message to completion.
@@ -548,7 +556,7 @@ impl AgentLoop {
         let cut = context::cut_point(&self.history)?;
         self.emit(AgentEvent::Status { text: "Making room: summarising the earlier work…".into() });
         let messages = context::with_summary_request(&self.history[..cut]);
-        let req = TurnRequest { system, messages: &messages, tools: &[], effort: Effort::Low, max_tokens: crate::anthropic::MAX_TOKENS };
+        let req = TurnRequest { system, messages: &messages, tools: &[], effort: Effort::Low, max_tokens: MAX_TOKENS };
         let stop = self.stop.clone();
         let summary = self.chain.get_mut(self.current).map(|slot| slot.model.turn(&req, &mut |_| {}, &stop));
         let mut accounted = None;
@@ -609,7 +617,7 @@ impl AgentLoop {
             let events = self.events.clone();
             let mut produced = false;
             let stop = self.stop.clone();
-            let req = TurnRequest { system, messages: &self.history, tools, effort, max_tokens: crate::anthropic::MAX_TOKENS };
+            let req = TurnRequest { system, messages: &self.history, tools, effort, max_tokens: MAX_TOKENS };
             let slot = self.chain.get_mut(self.current)?;
             let r = slot.model.turn(
                 &req,

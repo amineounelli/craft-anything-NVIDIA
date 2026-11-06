@@ -6,7 +6,7 @@ use crate::i18n::{tr, trf};
 use crate::state::Modal;
 use crate::theme::{self, Tokens};
 use crate::{CraftApp, icons, widgets};
-use craft_anything_ai::{BackendConfig, BackendKind};
+use craft_anything_ai::BackendConfig;
 use egui::{RichText, Ui, Vec2};
 
 /// A live agent catalogue and a draft selection, tied to the settings that were queried.
@@ -98,35 +98,18 @@ pub struct Choice {
 }
 
 fn detail(b: &BackendConfig) -> String {
-    match b.kind {
-        BackendKind::AgentCli => tr("Coding agent app"),
-        k if b.model.is_empty() => tr(k.title()),
-        k => format!("{} · {}", tr(k.title()), b.model),
-    }
+    if b.model.is_empty() { tr(b.kind.title()) } else { format!("{} · {}", tr(b.kind.title()), b.model) }
 }
 
 impl CraftApp {
-    /// Agent apps found on this computer that aren't set up yet (they need no key).
-    fn found_agents(&self) -> impl Iterator<Item = &BackendConfig> {
-        self.detected
-            .iter()
-            .flatten()
-            .filter(|d| d.suggestion.kind == BackendKind::AgentCli && !d.needs_key)
-            .map(|d| &d.suggestion)
-            .filter(|s| !craft_anything_ai::is_on(&self.backends, &s.name))
-    }
-
-    /// Every AI that can build: the ones set up and on, then agent apps found here.
+    /// Every AI that can build: the ones set up and on.
     pub fn builder_choices(&self) -> Vec<Choice> {
-        let set_up = self.backends.iter().filter(|b| b.enabled).map(|b| Choice { name: b.name.clone(), detail: detail(b), found: false });
-        let found = self.found_agents().map(|b| Choice { name: b.name.clone(), detail: detail(b), found: true });
-        set_up.chain(found).collect()
+        self.backends.iter().filter(|b| b.enabled).map(|b| Choice { name: b.name.clone(), detail: detail(b), found: false }).collect()
     }
 
-    /// What builds when the person doesn't choose: the default from Settings → AI, else an agent
-    /// app found on this computer.
+    /// What builds when the person doesn't choose: the default from Settings → AI.
     pub fn default_builder(&self) -> Option<String> {
-        craft_anything_ai::default_builder(&self.backends, self.builder.as_deref()).or_else(|| self.found_agents().next()).map(|b| b.name.clone())
+        craft_anything_ai::default_builder(&self.backends, self.builder.as_deref()).map(|b| b.name.clone())
     }
 
     /// Something can build.
@@ -134,29 +117,10 @@ impl CraftApp {
         self.default_builder().is_some()
     }
 
-    /// The AI to build with: `wanted` while it can build, else the default. An agent app that was
-    /// only found is set up now (it needs no key, and the person pressed Start).
+    /// The AI to build with: `wanted` while it can build, else the default.
     pub fn builder_backend(&mut self, wanted: Option<&str>) -> Option<String> {
         let choices = self.builder_choices();
-        let name = wanted.filter(|w| choices.iter().any(|c| c.name == *w)).map(str::to_string).or_else(|| self.default_builder())?;
-        let Some(found) = self.found_agents().find(|b| b.name == name).cloned() else { return Some(name) };
-        // Saved but switched off (#423): turn it on, keeping its program and folder, rather than
-        // saving a second copy over it.
-        let saved = self.backends.iter().any(|b| b.name == found.name);
-        let done = if saved { self.hub.set_enabled(&found.name, true).map(|_| ()) } else { self.hub.add_backend(found.clone(), None) };
-        match done {
-            Ok(()) => {
-                match self.backends.iter_mut().find(|b| b.name == found.name) {
-                    Some(b) => b.enabled = true,
-                    None => self.backends.push(found),
-                }
-                Some(name)
-            }
-            Err(e) => {
-                self.toast(e.message, true);
-                None
-            }
-        }
+        wanted.filter(|w| choices.iter().any(|c| c.name == *w)).map(str::to_string).or_else(|| self.default_builder())
     }
 
     /// Turn an AI on or off in Settings → AI (it keeps its key).
@@ -341,7 +305,7 @@ pub fn built_by(app: &mut CraftApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(default) = app.default_builder() else {
         icons::show(ui, "triangle-alert", 16.0, t.warning);
-        ui.label(RichText::new(tr("Building needs a coding agent such as Claude Code, or an AI with an API key.")).size(theme::BODY).color(t.text_dim));
+        ui.label(RichText::new(tr("Building needs an AI with an API key.")).size(theme::BODY).color(t.text_dim));
         if widgets::link(ui, "Set one up").clicked() {
             app.need_builder(false);
         }
@@ -385,35 +349,19 @@ pub fn need_builder_modal(app: &mut CraftApp, ui: &mut Ui, start: bool, close: &
         ui.vertical(|ui| {
             ui.label(theme::heading(tr("Set up a builder"), theme::CARD));
             ui.add(
-                egui::Label::new(
-                    RichText::new(tr(
-                        "Building needs a coding agent on this computer (Claude Code, Codex or Gemini CLI: install one and sign in to it once in its own window), or an AI with an API key. Craft Anything never sees your account.",
-                    ))
-                    .color(t.text_dim),
-                )
-                .wrap(),
+                egui::Label::new(RichText::new(tr("Building needs an AI with an API key. Craft Anything never sees your account.")).color(t.text_dim)).wrap(),
             );
         });
     });
     ui.add_space(14.0);
-    let found: Vec<BackendConfig> = app.found_agents().cloned().collect();
+    let found: Vec<BackendConfig> = Vec::new();
     if app.detecting {
         ui.horizontal(|ui| {
             ui.add(crate::widgets::Spinner::new().color(t.accent));
             ui.label(RichText::new(tr("Looking on this computer…")).color(t.text_dim));
         });
     } else if found.is_empty() {
-        ui.label(RichText::new(tr("No coding agent was found on this computer yet.")).color(t.text_dim));
-        for hint in &app.detect_hints {
-            match hint {
-                craft_anything_ai::detect::DetectHint::ClaudeDesktopWithoutCli { .. } => ui.add(
-                    egui::Label::new(
-                        RichText::new(tr("The Claude desktop app is installed, but building needs Claude Code, its separate command-line tool. Install Claude Code, sign in to it once in a terminal, then look again.")).color(t.text_dim),
-                    )
-                    .wrap(),
-                ),
-            };
-        }
+        ui.label(RichText::new(tr("No AI was found on this computer yet.")).color(t.text_dim));
     }
     for b in found {
         widgets::panel(&t).show(ui, |ui| {

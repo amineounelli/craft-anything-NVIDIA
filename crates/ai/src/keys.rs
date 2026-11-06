@@ -45,12 +45,7 @@ pub fn fal_key(store: &KeyStore) -> Option<String> {
 /// The environment variable conventionally holding a key for this kind.
 pub fn env_var(kind: BackendKind) -> Option<&'static str> {
     match kind {
-        BackendKind::Anthropic => Some("ANTHROPIC_API_KEY"),
-        BackendKind::Openai => Some("OPENAI_API_KEY"),
-        BackendKind::Openrouter => Some("OPENROUTER_API_KEY"),
-        BackendKind::Gemini => Some("GEMINI_API_KEY"),
         BackendKind::Nvidia => Some("NVIDIA_API_KEY"),
-        BackendKind::OpenaiCompatible | BackendKind::AgentCli => None,
     }
 }
 
@@ -265,8 +260,6 @@ mod tests {
         s.delete("Claude").unwrap();
         assert!(s.get("Claude").is_none());
         assert!(s.set("x", " ").is_err());
-        assert_eq!(env_var(BackendKind::Openrouter), Some("OPENROUTER_API_KEY"));
-        assert_eq!(env_var(BackendKind::Gemini), Some("GEMINI_API_KEY"));
         assert_eq!(env_var(BackendKind::Nvidia), Some("NVIDIA_API_KEY"));
     }
 }

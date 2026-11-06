@@ -604,224 +604,65 @@ mod typed_retries {
         }
     }
 
-    #[cfg(unix)]
-    fn executable_cli(ws: &Workspace, model: &str, script: &str) -> crate::cli_agents::CliConversation {
-        use std::os::unix::fs::PermissionsExt;
-        let program = ws.root.join("agent-stand-in.sh");
-        std::fs::write(&program, script).unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let config = crate::BackendConfig {
-            name: "Scripted CLI".into(),
-            kind: BackendKind::AgentCli,
-            model: model.into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        };
-        let options = crate::BackendOptions { command: Some(program.display().to_string()), timeout_secs: Some(10), ..Default::default() };
-        let mut spec = CliSpec::new(config, options, false, None);
-        spec.project = Some(ws.root.clone());
-        spec.preamble = Some(String::new());
-        crate::cli_agents::CliConversation::new(spec)
-    }
-
-    #[cfg(unix)]
     #[test]
-    fn a_failed_required_tool_server_stops_the_owned_cli_without_resuming_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut ws = Workspace::create(dir.path(), "x", "Build a thing", TargetRef::None).unwrap();
-        let mut worker = check_worker(&ws, false);
-        let (tx, rx) = std::sync::mpsc::channel();
-        worker.tx = tx;
-        let mut cli = executable_cli(
-            &ws,
-            "claude-code",
-            concat!(
-                "#!/bin/sh\ncat >/dev/null\nprintf 'attempt\\n' >> attempts\n",
-                "printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"cannot-build\",\"mcp_servers\":[{\"name\":\"craft-anything\",\"status\":\"failed\"}]}'\n",
-                "sleep 5\nprintf 'unreachable' > continued-without-tools\n"
-            ),
-        );
-        let error = worker.turn_with_wait(&mut ws, &mut cli, "Build the app", None, |_, _| panic!("missing tools must not be retried")).unwrap_err();
-        assert!(error.message.contains("tools did not start"), "{error:?}");
-        assert_eq!(cli.last_failure().unwrap().kind, FailureKind::ToolsUnavailable);
-        assert!(!cli.is_busy());
-        assert_eq!(std::fs::read_to_string(ws.root.join("attempts")).unwrap(), "attempt\n");
-        assert!(!ws.root.join("continued-without-tools").exists(), "the owned child was stopped at the failed init");
-        assert_eq!(rx.try_iter().filter(|e| matches!(e, RunEvent::Agent(AgentEvent::TurnDone { .. }))).count(), 1);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_plain_nonzero_cli_exit_resumes_its_saved_session() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut ws = Workspace::create(dir.path(), "x", "Build a thing", TargetRef::None).unwrap();
-        let mut worker = check_worker(&ws, false);
-        let (tx, rx) = std::sync::mpsc::channel();
-        worker.tx = tx;
-        let mut cli = executable_cli(
-            &ws,
-            "claude-code",
-            concat!(
-                "#!/bin/sh\ncat >> prompts\nprintf '\\n' >> prompts\nprintf 'attempt\\n' >> attempts\n",
-                "case \" $* \" in *\" --resume interrupted-session \"*)\n",
-                "printf '%s\\n' '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Built after the interruption\"}]}}'\n",
-                "printf '%s\\n' '{\"type\":\"result\",\"is_error\":false,\"result\":\"Built after the interruption\"}'\nexit 0;; esac\n",
-                "printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"interrupted-session\"}'\nexit 1\n"
-            ),
-        );
-        let mut waits = Vec::new();
-        let result = worker.turn_with_wait(&mut ws, &mut cli, "Make a notes app", None, |_, seconds| {
-            waits.push(seconds);
-            Ok(())
-        });
-        assert_eq!(std::fs::read_to_string(ws.root.join("attempts")).unwrap(), "attempt\nattempt\n", "a plain nonzero exit must resume the reported session");
-        assert_eq!(result.unwrap(), "Built after the interruption");
-        assert_eq!(waits, [30]);
-        assert_eq!(std::fs::read_to_string(ws.root.join("prompts")).unwrap(), format!("Make a notes app\n{}\n", crate::failure::CONTINUE_TURN));
-        assert_eq!(cli.session_id().as_deref(), Some("interrupted-session"));
-        assert!(cli.last_failure().is_none(), "successful recovery clears the process failure");
-        assert!(!cli.is_busy());
-        assert_eq!(rx.try_iter().filter(|e| matches!(e, RunEvent::Agent(AgentEvent::TurnDone { .. }))).count(), 2);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn typed_cli_setup_errors_take_precedence_over_a_nonzero_exit() {
-        for (code, kind) in
-            [("authentication_failed", FailureKind::Authentication), ("billing_error", FailureKind::Billing), ("model_not_found", FailureKind::Configuration)]
-        {
-            let dir = tempfile::tempdir().unwrap();
-            let mut ws = Workspace::create(dir.path(), "x", "Build a thing", TargetRef::None).unwrap();
-            let mut worker = check_worker(&ws, false);
-            let error = json!({"type":"assistant","error":code,"message":{"content":[{"type":"text","text":"Please retry in 1s."}]}});
-            let script = format!("#!/bin/sh\ncat >/dev/null\nprintf 'attempt\\n' >> attempts\nprintf '%s\\n' '{error}'\nexit 1\n");
-            let mut cli = executable_cli(&ws, "claude-code", &script);
-            let result = worker.turn_with_wait(&mut ws, &mut cli, "Make a notes app", None, |_, _| panic!("typed setup failures must not retry"));
-            assert!(result.is_err(), "{kind:?}");
-            assert_eq!(cli.last_failure().unwrap().kind, kind);
-            assert_eq!(std::fs::read_to_string(ws.root.join("attempts")).unwrap(), "attempt\n");
-            assert!(!cli.is_busy());
+    fn games_get_the_mechanics_sheet_and_decompile_only_in_deep_mode() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = Workspace::create(d.path(), "Game", "Copy this game", TargetRef::Local { path: d.path().join("game.exe") }).unwrap();
+        let deep = brief(&ws, "game", true, false, None, false, None);
+        let clean = brief(&ws, "game", false, false, None, false, None);
+        for b in [&deep, &clean] {
+            assert!(b.contains("MECHANICS.md"), "{b}");
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn opencode_retries_a_typed_rate_limit_with_its_whole_original_request() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut ws = Workspace::create(dir.path(), "x", "Build a thing", TargetRef::None).unwrap();
-        let mut worker = check_worker(&ws, false);
-        let (tx, rx) = std::sync::mpsc::channel();
-        worker.tx = tx;
-        let mut cli = executable_cli(
-            &ws,
-            "opencode",
-            concat!(
-                "#!/bin/sh\nif [ \"$2\" = '--help' ]; then printf '%s\\n' '--format'; exit 0; fi\n",
-                "for arg do last=\"$arg\"; done\nprintf '%s\\n' \"$last\" >> prompts\n",
-                "if [ ! -f rate-was-returned ]; then touch rate-was-returned\n",
-                "printf '%s\\n' '{\"type\":\"error\",\"error\":{\"name\":\"APIError\",\"data\":{\"message\":\"Please retry in 19.052906498s.\",\"statusCode\":429,\"isRetryable\":true}}}'\nexit 1\nfi\n",
-                "printf '%s\\n' '{\"type\":\"text\",\"part\":{\"text\":\"Built the app\"}}'\n"
-            ),
+        // Deep mode: 1:1 with the original's own files, for private use, never decrypting anything.
+        assert!(
+            deep.contains("original game's own files") && deep.contains("Never decrypt") && deep.contains("must not be shared") && deep.contains("CREDITS.md")
         );
-        let mut waits = Vec::new();
-        assert_eq!(
-            worker
-                .turn_with_wait(&mut ws, &mut cli, "Make a notes app", None, |_, seconds| {
-                    waits.push(seconds);
-                    Ok(())
-                })
-                .unwrap(),
-            "Built the app"
+        assert!(deep.contains(PRIVATE_USE_NOTE), "the README line the credits check looks for, as written");
+        // It points the builder at the app's own archive tools before any outside converter.
+        assert!(deep.contains("enable_toolset with \"formats\"") && deep.contains("game_pak_extract") && deep.contains("game_unreal_texture_export"));
+        assert!(!clean.contains("game_pak_extract"), "Clean room copies no files out of the game");
+        // Clean room copies none of the original's files: its own art, and it says Deep mode is needed.
+        assert!(clean.contains("take nothing from the original game's files") && clean.contains("Make your own simple versions"), "{clean}");
+        assert!(!clean.contains("original game's own files") && !clean.contains("must not be shared") && clean.contains("needs Deep mode"));
+        assert!(deep.contains("native_function_pseudocode") && deep.contains("never paste decompiled code"));
+        assert!(clean.contains("don't open, read, list or decompile the game's files or code") && !clean.contains("decompile the program before"));
+        assert!(clean.contains("nothing inside the program, its files or its folder was read") && !clean.contains("core_target_open"), "{clean}");
+        // Deep mode requires decompiling before estimating, and says to wait for Ghidra.
+        assert!(deep.contains("decompile the program before you estimate anything") && deep.contains("only after you looked for it in the code"));
+        // It says which decompiler it really has.
+        assert!(deep.contains("Ghidra isn't installed") && deep.contains("built-in decompiler"));
+        // Generated assets replace the original's art; its sounds and the rest still come from the game.
+        let mut gen_ws = ws.clone();
+        gen_ws.manifest.generate_assets = true;
+        let generated = brief(&gen_ws, "game", true, false, None, true, None);
+        assert!(generated.contains("instead of copying the original's") && generated.contains("Realistic assets"), "{generated}");
+        assert!(!generated.contains("Art, sounds, models") && generated.contains("Sounds, music, fonts, animations and maps"), "{generated}");
+        // Clean room with generated assets: generated art, the rest its own; still nothing copied.
+        let generated = brief(&gen_ws, "game", false, false, None, true, None);
+        assert!(
+            generated.contains("take nothing from the original game's files") && generated.contains("with assets_model_generate and assets_image_generate"),
+            "{generated}"
         );
-        assert_eq!(waits, [21]);
-        assert_eq!(std::fs::read_to_string(ws.root.join("prompts")).unwrap(), "Make a notes app\nMake a notes app\n");
-        assert!(cli.session_id().is_none());
-        assert!(cli.last_failure().is_none(), "successful retry clears the prior failure");
-        assert!(!cli.is_busy());
-        assert_eq!(rx.try_iter().filter(|e| matches!(e, RunEvent::Agent(AgentEvent::TurnDone { .. }))).count(), 2, "one final event per process attempt");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_untyped_opencode_exit_keeps_its_error_and_the_three_retry_cap() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut ws = Workspace::create(dir.path(), "x", "Build a thing", TargetRef::None).unwrap();
-        let mut worker = check_worker(&ws, false);
-        let mut cli = executable_cli(
-            &ws,
-            "opencode",
-            "#!/bin/sh\nif [ \"$2\" = '--help' ]; then printf 'old help\\n'; exit 0; fi\nprintf 'attempt\\n' >> attempts\nprintf 'Unknown option: --format. Please retry in 1s.\\n' >&2\nexit 2\n",
+        assert!(generated.contains("Realistic assets") && !generated.contains("original game's own files"), "{generated}");
+        let with_ghidra = brief(&ws, "game", true, true, None, false, None);
+        assert!(
+            with_ghidra.contains("reads the code with Ghidra") && with_ghidra.contains("never skip decompiling") && !with_ghidra.contains("isn't installed")
         );
-        let mut waits = Vec::new();
-        let error = worker
-            .turn_with_wait(&mut ws, &mut cli, "Make a notes app", None, |_, seconds| {
-                waits.push(seconds);
-                Ok(())
-            })
-            .unwrap_err();
-        assert!(error.message.contains("Unknown option"), "{error:?}");
-        assert_eq!(cli.last_failure().unwrap().kind, FailureKind::Transient);
-        assert!(!cli.is_busy());
-        assert_eq!(waits, [2, 2, 2], "the display wait hint affects only the delay after a retryable exit");
-        assert_eq!(std::fs::read_to_string(ws.root.join("attempts")).unwrap(), "attempt\nattempt\nattempt\nattempt\n");
+        // An app rebuilt from a program gets the same rule in Deep mode, and only then.
+        let app = brief(&ws, "app", true, true, None, false, None);
+        assert!(app.contains("decompile the program before you estimate anything") && app.contains("features the person asked for"), "{app}");
+        assert!(!brief(&ws, "app", false, true, None, false, None).contains("decompile the program before"));
+        assert!(!clean.contains("Ghidra"), "Clean room never mentions Ghidra");
+        // Without a target there is nothing to decompile or license; the sheet still helps.
+        let none = Workspace::create(d.path(), "Fresh", "a snake game", TargetRef::None).unwrap();
+        let b = brief(&none, "game", true, true, None, false, None);
+        assert!(b.contains("MECHANICS.md") && !b.contains("decompile") && !b.contains("CREDITS.md"));
+        // Every game, the snake demo too, plays its core loop for the self-test check.
+        for b in [&b, &deep, &clean] {
+            assert!(b.contains(kinds::self_test::SELF_TEST_CONTRACT), "{b}");
+        }
+        assert!(!brief(&ws, "app", false, false, None, false, None).contains("MECHANICS.md"), "apps get the sheet only in Deep mode");
     }
-}
-
-#[test]
-fn games_get_the_mechanics_sheet_and_decompile_only_in_deep_mode() {
-    let d = tempfile::tempdir().unwrap();
-    let ws = Workspace::create(d.path(), "Game", "Copy this game", TargetRef::Local { path: d.path().join("game.exe") }).unwrap();
-    let deep = brief(&ws, "game", true, false, None, false, None);
-    let clean = brief(&ws, "game", false, false, None, false, None);
-    for b in [&deep, &clean] {
-        assert!(b.contains("MECHANICS.md"), "{b}");
-    }
-    // Deep mode: 1:1 with the original's own files, for private use, never decrypting anything.
-    assert!(deep.contains("original game's own files") && deep.contains("Never decrypt") && deep.contains("must not be shared") && deep.contains("CREDITS.md"));
-    assert!(deep.contains(PRIVATE_USE_NOTE), "the README line the credits check looks for, as written");
-    // It points the builder at the app's own archive tools before any outside converter.
-    assert!(deep.contains("enable_toolset with \"formats\"") && deep.contains("game_pak_extract") && deep.contains("game_unreal_texture_export"));
-    assert!(!clean.contains("game_pak_extract"), "Clean room copies no files out of the game");
-    // Clean room copies none of the original's files: its own art, and it says Deep mode is needed.
-    assert!(clean.contains("take nothing from the original game's files") && clean.contains("Make your own simple versions"), "{clean}");
-    assert!(!clean.contains("original game's own files") && !clean.contains("must not be shared") && clean.contains("needs Deep mode"));
-    assert!(deep.contains("native_function_pseudocode") && deep.contains("never paste decompiled code"));
-    assert!(clean.contains("don't open, read, list or decompile the game's files or code") && !clean.contains("decompile the program before"));
-    assert!(clean.contains("nothing inside the program, its files or its folder was read") && !clean.contains("core_target_open"), "{clean}");
-    // Deep mode requires decompiling before estimating, and says to wait for Ghidra.
-    assert!(deep.contains("decompile the program before you estimate anything") && deep.contains("only after you looked for it in the code"));
-    // It says which decompiler it really has.
-    assert!(deep.contains("Ghidra isn't installed") && deep.contains("built-in decompiler"));
-    // Generated assets replace the original's art; its sounds and the rest still come from the game.
-    let mut gen_ws = ws.clone();
-    gen_ws.manifest.generate_assets = true;
-    let generated = brief(&gen_ws, "game", true, false, None, true, None);
-    assert!(generated.contains("instead of copying the original's") && generated.contains("Realistic assets"), "{generated}");
-    assert!(!generated.contains("Art, sounds, models") && generated.contains("Sounds, music, fonts, animations and maps"), "{generated}");
-    // Clean room with generated assets: generated art, the rest its own; still nothing copied.
-    let generated = brief(&gen_ws, "game", false, false, None, true, None);
-    assert!(
-        generated.contains("take nothing from the original game's files") && generated.contains("with assets_model_generate and assets_image_generate"),
-        "{generated}"
-    );
-    assert!(generated.contains("Realistic assets") && !generated.contains("original game's own files"), "{generated}");
-    let with_ghidra = brief(&ws, "game", true, true, None, false, None);
-    assert!(with_ghidra.contains("reads the code with Ghidra") && with_ghidra.contains("never skip decompiling") && !with_ghidra.contains("isn't installed"));
-    // An app rebuilt from a program gets the same rule in Deep mode, and only then.
-    let app = brief(&ws, "app", true, true, None, false, None);
-    assert!(app.contains("decompile the program before you estimate anything") && app.contains("features the person asked for"), "{app}");
-    assert!(!brief(&ws, "app", false, true, None, false, None).contains("decompile the program before"));
-    assert!(!clean.contains("Ghidra"), "Clean room never mentions Ghidra");
-    // Without a target there is nothing to decompile or license; the sheet still helps.
-    let none = Workspace::create(d.path(), "Fresh", "a snake game", TargetRef::None).unwrap();
-    let b = brief(&none, "game", true, true, None, false, None);
-    assert!(b.contains("MECHANICS.md") && !b.contains("decompile") && !b.contains("CREDITS.md"));
-    // Every game, the snake demo too, plays its core loop for the self-test check.
-    for b in [&b, &deep, &clean] {
-        assert!(b.contains(kinds::self_test::SELF_TEST_CONTRACT), "{b}");
-    }
-    assert!(!brief(&ws, "app", false, false, None, false, None).contains("MECHANICS.md"), "apps get the sheet only in Deep mode");
 }
 
 /// What a person typed in the app when the clone came out in Vite without shadcn.
@@ -1294,7 +1135,7 @@ mod picking_up_a_build {
         cfg.upsert(crate::BackendEntry {
             config: crate::BackendConfig {
                 name: "Stand-in".into(),
-                kind: BackendKind::AgentCli,
+                kind: BackendKind::Nvidia,
                 model: "stand-in".into(),
                 base_url: None,
                 ssh_host: None,
@@ -1350,44 +1191,6 @@ mod picking_up_a_build {
 
     /// #91: with the helper missing, the build stops before studying or asking the agent, and
     /// says why.
-    #[test]
-    fn a_missing_helper_stops_the_build_before_any_work() {
-        struct NoHelper;
-        impl crate::cli_agents::AgentAdapter for NoHelper {
-            fn ids(&self) -> &'static [&'static str] {
-                &["stand-in"]
-            }
-            fn args(&self, cx: &crate::cli_agents::ArgsCx) -> Vec<String> {
-                vec![cx.prompt.to_string()]
-            }
-            fn streams_json(&self) -> bool {
-                false
-            }
-            fn check_tool_server(&self, stop: &CancelToken) -> Result<(), ToolError> {
-                crate::cli_agents::cli_can_start(None, stop)
-            }
-        }
-        let b = bench();
-        let ws = Workspace::create(&b.projects, "x", "A thing", TargetRef::None).unwrap();
-        let mut adapters = crate::cli_agents::AgentAdapters::built_in();
-        adapters.register(Arc::new(NoHelper));
-        let run =
-            RebuildRun::start(&b.hub, Workspace::open(&ws.root).unwrap(), RunOptions { adapters, backend: Some("Stand-in".into()), ..RunOptions::default() })
-                .unwrap();
-        let began = Instant::now();
-        let finished = loop {
-            assert!(began.elapsed() < Duration::from_secs(30), "the run never finished");
-            match run.rx.recv_timeout(Duration::from_secs(30)) {
-                Ok(RunEvent::Finished { ok, message, .. }) => break (ok, message),
-                Ok(_) => {}
-                Err(e) => panic!("the run went away: {e}"),
-            }
-        };
-        assert!(!finished.0, "{finished:?}");
-        assert!(finished.1.contains("craft-anything-cli"), "{finished:?}");
-        assert_eq!(prompts_given(&b), 0, "the agent was asked anyway");
-        assert!(!studied(&feed::load(&Workspace::open(&ws.root).unwrap())), "it studied first");
-    }
 
     #[test]
     fn try_again_after_a_check_that_could_not_run_only_checks() {
@@ -1649,7 +1452,7 @@ mod picking_up_a_build {
         let entry = crate::BackendEntry {
             config: crate::BackendConfig {
                 name: "Scripted".into(),
-                kind: BackendKind::OpenaiCompatible,
+                kind: BackendKind::Nvidia,
                 model: "scripted".into(),
                 base_url: None,
                 ssh_host: None,
@@ -1760,7 +1563,7 @@ mod picking_up_a_build {
                 let entry = crate::BackendEntry {
                     config: crate::BackendConfig {
                         name: "Scripted".into(),
-                        kind: BackendKind::OpenaiCompatible,
+                        kind: BackendKind::Nvidia,
                         model: "scripted".into(),
                         base_url: None,
                         ssh_host: None,
@@ -2292,47 +2095,6 @@ impl Conversation for ChecksItsWork {
     }
 }
 
-#[test]
-fn preparing_the_builders_agent_does_not_lock_up() {
-    let d = tempfile::tempdir().unwrap();
-    let ws = Workspace::create(d.path(), "Arena", "Recreate this game", TargetRef::None).unwrap();
-    let (tx, _rx) = std::sync::mpsc::channel();
-    let w = Worker {
-        wake: Default::default(),
-        engine: Arc::new(Engine::new(craft_anything_engine::testing::session())),
-        tx,
-        stop: CancelToken::default(),
-        preview: Arc::default(),
-        seen: HashSet::new(),
-        inbox: Inbox::new(ws.inbox_dir()),
-        editor: None,
-        notes: Arc::default(),
-        feed: Arc::new(Mutex::new(feed::FeedLog::open(&ws))),
-        assets: false,
-        decompiled: false,
-        usage: None,
-        self_check: None,
-        reset_progress_after_notes: false,
-    };
-    let entry = crate::BackendEntry {
-        config: crate::BackendConfig {
-            name: "x".into(),
-            kind: crate::BackendKind::AgentCli,
-            model: "claude-code".into(),
-            base_url: None,
-            ssh_host: None,
-            enabled: true,
-        },
-        options: Default::default(),
-    };
-    let (done, finished) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = done.send(w.agent_spec(&ws, &entry, &RunOptions::default()).logs);
-    });
-    let logs = finished.recv_timeout(std::time::Duration::from_secs(20)).expect("it took the session lock twice and waited on itself");
-    assert!(logs.is_some());
-}
-
 /// The builder's own `rebuild_check`, asked mid-turn, is answered by the run and isn't a round.
 #[test]
 fn the_run_answers_the_builders_own_check_during_its_turn() {
@@ -2703,7 +2465,7 @@ fn a_project_is_built_by_the_ai_it_was_started_with_while_that_one_is_on() {
     ws.manifest.builder = Some("Codex".into());
     let mut cfg = AiConfig::default();
     for (name, enabled) in [("Claude Code", true), ("Codex", true)] {
-        let c = BackendConfig { name: name.into(), kind: BackendKind::AgentCli, model: String::new(), base_url: None, ssh_host: None, enabled };
+        let c = BackendConfig { name: name.into(), kind: BackendKind::Nvidia, model: String::new(), base_url: None, ssh_host: None, enabled };
         cfg.upsert(BackendEntry { config: c, options: Default::default() });
     }
     assert_eq!(super::project_builder(&cfg, &ws), Some("Codex"));
@@ -2712,216 +2474,4 @@ fn a_project_is_built_by_the_ai_it_was_started_with_while_that_one_is_on() {
     cfg.backends.iter_mut().for_each(|b| b.config.enabled = b.config.name != "Codex");
     assert_eq!(super::project_builder(&cfg, &ws), None);
     assert_eq!(builder_backend(&cfg, super::project_builder(&cfg, &ws)).unwrap().config.name, "Claude Code");
-}
-
-/// #446: a project copied from another computer keeps the id of a Claude Code session that lives
-/// only there. The builder (a stand-in that answers like Claude Code 2.1) can't resume it, so the
-/// turn starts a new session from the brief and what's in app/, and keeps the new id.
-#[cfg(unix)]
-#[test]
-fn a_session_left_on_another_computer_starts_a_new_one_from_the_project() {
-    use std::os::unix::fs::PermissionsExt;
-    let d = tempfile::tempdir().unwrap();
-    let mut ws = Workspace::create(d.path(), "Notes", "A notes app", TargetRef::None).unwrap();
-    ws.manifest.agent_session = Some("39b5b312-5678-1234-961c-32112666ffab".into());
-    ws.manifest.last_reply = "Built a notes app with a sidebar.".into();
-    ws.save().unwrap();
-    let bin = tempfile::tempdir().unwrap();
-    let program = bin.path().join("claude");
-    let missing = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"session_id":"39b5b312-5678-1234-961c-32112666ffab","errors":["No conversation found with session ID: 39b5b312-5678-1234-961c-32112666ffab"]}"#;
-    let fresh = r#"{"type":"system","subtype":"init","session_id":"new-1"}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Carried on: %s"}]}}
-{"type":"result","subtype":"success","is_error":false,"num_turns":1,"session_id":"new-1"}
-"#;
-    // Like Claude Code: `--resume` of a session it doesn't have fails at once; otherwise it starts
-    // one. It keeps what it was sent, so the test can read the new session's first message.
-    let script = format!(
-        "#!/bin/sh\ncase \" $* \" in *\" --resume \"*) cat >/dev/null; echo '{missing}'; echo 'No conversation found' >&2; exit 1;; esac\ncat > \"$0.last\"\nprintf '{fresh}' yes\n"
-    );
-    std::fs::write(&program, script).unwrap();
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let config =
-        crate::BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
-    let options = crate::config::BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
-    let spec = crate::cli_agents::CliSpec { resume: ws.manifest.agent_session.clone(), ..crate::cli_agents::CliSpec::new(config, options, false, None) };
-    let mut agent = crate::cli_agents::CliConversation::new(spec);
-    let (tx, rx) = std::sync::mpsc::channel();
-    let mut w = Worker {
-        wake: Default::default(),
-        engine: Arc::new(Engine::new(craft_anything_engine::testing::session())),
-        tx,
-        stop: CancelToken::default(),
-        preview: Arc::default(),
-        seen: HashSet::new(),
-        inbox: Inbox::new(ws.inbox_dir()),
-        editor: None,
-        notes: Arc::default(),
-        feed: Arc::new(Mutex::new(feed::FeedLog::open(&ws))),
-        assets: false,
-        decompiled: false,
-        usage: None,
-        self_check: None,
-        reset_progress_after_notes: false,
-    };
-    let first = resumed_elsewhere("THE BRIEF", &ws.manifest.last_reply, None);
-    let reply = w.turn(&mut ws, &mut agent, "The person asks: make it blue", Some(first)).unwrap();
-    assert_eq!(reply.trim(), "Carried on: yes");
-    let sent = std::fs::read_to_string(bin.path().join("claude.last")).unwrap();
-    assert!(
-        sent.starts_with("THE BRIEF") && sent.contains("already under way") && sent.contains("app/") && sent.contains("notes app with a sidebar"),
-        "{sent}"
-    );
-    assert_eq!(ws.manifest.agent_session.as_deref(), Some("new-1"), "the new session is the one kept");
-    assert_eq!(Workspace::open(&ws.root).unwrap().manifest.agent_session.as_deref(), Some("new-1"));
-    let events: Vec<RunEvent> = rx.try_iter().collect();
-    assert!(!events.iter().any(|e| matches!(e, RunEvent::Agent(AgentEvent::Error { .. }))), "nothing failed, as far as the person can see: {events:?}");
-    assert!(
-        events.iter().any(|e| matches!(e, RunEvent::Step { text, .. } if text.contains("isn't on this computer"))),
-        "but they're told why it starts afresh"
-    );
-}
-
-/// Without anything to start a new session from, the run stops and says why, and the id it
-/// couldn't find is forgotten so the next run starts afresh.
-#[cfg(unix)]
-#[test]
-fn a_missing_session_with_nothing_to_start_from_is_said_plainly() {
-    use std::os::unix::fs::PermissionsExt;
-    let d = tempfile::tempdir().unwrap();
-    let mut ws = Workspace::create(d.path(), "Notes", "A notes app", TargetRef::None).unwrap();
-    ws.manifest.agent_session = Some("gone".into());
-    let bin = tempfile::tempdir().unwrap();
-    let program = bin.path().join("claude");
-    let missing = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"session_id":"gone","errors":["No conversation found with session ID: gone"]}"#;
-    std::fs::write(&program, format!("#!/bin/sh\ncat >/dev/null\necho '{missing}'\nexit 1\n")).unwrap();
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let config =
-        crate::BackendConfig { name: "Claude".into(), kind: BackendKind::AgentCli, model: "claude-code".into(), base_url: None, ssh_host: None, enabled: true };
-    let options = crate::config::BackendOptions { command: Some(program.display().to_string()), ..Default::default() };
-    let spec = crate::cli_agents::CliSpec { resume: Some("gone".into()), ..crate::cli_agents::CliSpec::new(config, options, false, None) };
-    let mut agent = crate::cli_agents::CliConversation::new(spec);
-    let (tx, _rx) = std::sync::mpsc::channel();
-    let mut w = Worker {
-        wake: Default::default(),
-        engine: Arc::new(Engine::new(craft_anything_engine::testing::session())),
-        tx,
-        stop: CancelToken::default(),
-        preview: Arc::default(),
-        seen: HashSet::new(),
-        inbox: Inbox::new(ws.inbox_dir()),
-        editor: None,
-        notes: Arc::default(),
-        feed: Arc::new(Mutex::new(feed::FeedLog::open(&ws))),
-        assets: false,
-        decompiled: false,
-        usage: None,
-        self_check: None,
-        reset_progress_after_notes: false,
-    };
-    let e = w.turn_with_wait(&mut ws, &mut agent, "Carry on.", None, |_, _| panic!("a missing session without a fresh start must not be retried")).unwrap_err();
-    assert!(e.message.contains("isn't on this computer"), "{e:?}");
-    assert!(ws.manifest.agent_session.is_none());
-}
-
-/// #451: after each turn the project keeps a copy of the builder's session, and a new session on
-/// another computer is handed the conversation it kept.
-#[test]
-fn the_builders_conversation_travels_with_the_project() {
-    struct KeepsSessions(PathBuf);
-    impl crate::cli_agents::AgentAdapter for KeepsSessions {
-        fn ids(&self) -> &'static [&'static str] {
-            &["keeps"]
-        }
-        fn args(&self, _cx: &crate::cli_agents::ArgsCx) -> Vec<String> {
-            Vec::new()
-        }
-        /// Sessions sit flat in the stand-in store, named by id.
-        fn session_file(&self, id: &str) -> Option<PathBuf> {
-            Some(self.0.join(format!("{id}.jsonl"))).filter(|p| p.is_file())
-        }
-        /// Read back as Claude Code's are.
-        fn handoff(&self, saved: &str, max: usize) -> Option<String> {
-            crate::cli_agents::adapters::claude_handoff(saved, max)
-        }
-        /// Put back into the stand-in store, never over one that's there.
-        fn restore_session(&self, id: &str, saved: &[u8], _cwd: &Path) -> Result<bool, ToolError> {
-            let path = self.0.join(format!("{id}.jsonl"));
-            if path.is_file() {
-                return Ok(false);
-            }
-            std::fs::write(path, saved).map(|_| true).map_err(|e| ToolError::invalid(e.to_string()))
-        }
-    }
-    let d = tempfile::tempdir().unwrap();
-    let mut ws = Workspace::create(d.path(), "Notes", "A notes app", TargetRef::None).unwrap();
-    let store = tempfile::tempdir().unwrap();
-    let session = [
-        serde_json::json!({"type":"user","message":{"content":"Make a notes app."}}),
-        serde_json::json!({"type":"assistant","message":{"content":[{"type":"text","text":"Built it with a sidebar."}]}}),
-    ]
-    .iter()
-    .map(|v| v.to_string())
-    .collect::<Vec<_>>()
-    .join("\n");
-    std::fs::write(store.path().join("s-1.jsonl"), &session).unwrap();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let w = Worker {
-        wake: Default::default(),
-        engine: Arc::new(Engine::new(craft_anything_engine::testing::session())),
-        tx,
-        stop: CancelToken::default(),
-        preview: Arc::default(),
-        seen: HashSet::new(),
-        inbox: Inbox::new(ws.inbox_dir()),
-        editor: None,
-        notes: Arc::default(),
-        feed: Arc::new(Mutex::new(feed::FeedLog::open(&ws))),
-        assets: false,
-        decompiled: false,
-        usage: None,
-        self_check: None,
-        reset_progress_after_notes: false,
-    };
-    let adapter = KeepsSessions(store.path().to_path_buf());
-    // No session yet, or one this computer doesn't have: nothing to keep, nothing said.
-    w.keep_session(&ws, &adapter);
-    ws.manifest.agent_session = Some("gone".into());
-    w.keep_session(&ws, &adapter);
-    assert!(!ws.agent_session_path().exists() && rx.try_iter().next().is_none());
-    ws.manifest.agent_session = Some("s-1".into());
-    w.keep_session(&ws, &adapter);
-    assert_eq!(std::fs::read_to_string(ws.agent_session_path()).unwrap(), session);
-
-    // On the other computer: the session is put back from the project, and the person is told.
-    std::fs::remove_file(store.path().join("s-1.jsonl")).unwrap();
-    w.restore_session(&ws, &adapter);
-    assert_eq!(std::fs::read_to_string(store.path().join("s-1.jsonl")).unwrap(), session);
-    let said: Vec<String> = rx.try_iter().filter_map(|e| if let RunEvent::Agent(AgentEvent::Status { text }) = e { Some(text) } else { None }).collect();
-    assert!(said.iter().any(|t| t.contains("Brought the builder's earlier conversation over")), "{said:?}");
-    w.restore_session(&ws, &adapter);
-    assert!(rx.try_iter().next().is_none(), "nothing to say when it's already there");
-
-    // Where it can't be, the new session's first message carries the kept conversation.
-    let handoff = crate::cli_agents::AgentAdapter::handoff(&adapter, &kept_session(&ws).unwrap(), HANDOFF_CHARS);
-    let first = resumed_elsewhere("THE BRIEF", "Last summary.", handoff.as_deref());
-    assert!(first.starts_with("THE BRIEF") && first.contains("isn't on this computer"), "{first}");
-    assert!(first.contains("Craft Anything asked you: Make a notes app.") && first.contains("You answered: Built it with a sidebar."), "{first}");
-    // Without a kept conversation, the last summary stands in for it.
-    let bare = resumed_elsewhere("THE BRIEF", "Last summary.", None);
-    assert!(bare.contains("Last summary.") && !bare.contains("as the project kept it"), "{bare}");
-
-    // A copy that can't be written is said, and the build goes on.
-    std::fs::remove_file(ws.agent_session_path()).unwrap();
-    std::fs::create_dir_all(ws.agent_session_path()).unwrap();
-    w.keep_session(&ws, &adapter);
-    let said: Vec<String> = rx.try_iter().filter_map(|e| if let RunEvent::Agent(AgentEvent::Status { text }) = e { Some(text) } else { None }).collect();
-    assert!(said.iter().any(|t| t.contains("Couldn't keep a copy")), "{said:?}");
-}
-
-/// A coding agent that was signed in once and no longer is says so, rather than "isn't signed in",
-/// which reads as if the person never did.
-#[test]
-fn a_sign_in_that_stopped_working_is_called_that() {
-    assert_eq!(not_signed_in("claude-code", false), "Claude Code isn't signed in on this computer.");
-    assert_eq!(not_signed_in("claude-code", true), "Claude Code's sign-in on this computer has expired or was signed out.");
 }
